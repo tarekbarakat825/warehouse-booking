@@ -1,0 +1,2195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام حجز استلامات المخازن</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Google Apps Script API (Sheets backend) -->
+<script>
+  const API_URL = "https://script.google.com/macros/s/AKfycbz1GFSuqsUxgwBc9rwZyJOU1shN99MYT68qq0j1Qzqk2_wXdbb4Yv_5FRW2SGKgzfbNPw/exec";
+  async function apiGet(action, params = {}) {
+    const url = new URL(API_URL);
+    url.searchParams.set('action', action);
+    Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
+    const res = await fetch(url.toString(), { method: 'GET' });
+    return res.json();
+  }
+  async function apiPost(action, data) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, data }),
+    });
+    return res.json();
+  }
+  function nowIso(){ return new Date().toISOString(); }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0f0f0e;
+  --paper:#f7f5f0;
+  --surface:#ffffff;
+  --border:#ddd9d0;
+  --muted:#8a8680;
+  --accent:#e85d26;
+  --accent-light:#fdf0eb;
+  --green:#1a7a4a;
+  --green-light:#eaf5ef;
+  --red:#c0392b;
+  --red-light:#fdf0ef;
+  --amber:#b8860b;
+  --amber-light:#fdf8e6;
+  --blue:#1a4fa0;
+  --blue-light:#eef2fb;
+  --shadow:0 1px 4px rgba(0,0,0,.08);
+  --shadow-md:0 4px 16px rgba(0,0,0,.10);
+  --r:4px;
+  --font:'IBM Plex Sans Arabic',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:14px;line-height:1.6;min-height:100vh}
+
+/* LOGIN */
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:36px 40px;max-width:420px;width:100%;box-shadow:var(--shadow-md)}
+.login-logo{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+.login-logo .dot{width:10px;height:10px;background:var(--accent);border-radius:50%}
+.login-logo span{font-size:16px;font-weight:700;letter-spacing:-.3px}
+.login-title{font-size:20px;font-weight:700;margin-bottom:6px;letter-spacing:-.3px}
+.login-sub{font-size:12px;color:var(--muted);margin-bottom:24px}
+.login-group{margin-bottom:16px}
+.login-group label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px}
+.login-group input{width:100%;font-family:var(--font);font-size:14px;border:1.5px solid var(--border);border-radius:var(--r);padding:10px 13px;background:var(--paper);color:var(--ink);transition:border-color .15s}
+.login-group input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.login-btn{width:100%;font-family:var(--font);font-size:14px;font-weight:700;background:var(--ink);color:#fff;border:none;border-radius:var(--r);padding:12px;cursor:pointer;transition:background .15s;margin-top:4px}
+.login-btn:hover{background:#333}
+.login-error{background:var(--red-light);border:1px solid #f0b9b5;color:var(--red);border-radius:3px;padding:9px 13px;font-size:12px;margin-bottom:14px;display:none}
+.login-error.show{display:block}
+.login-roles{display:flex;gap:8px;margin-bottom:20px}
+.role-chip{flex:1;text-align:center;padding:9px;border:1.5px solid var(--border);border-radius:var(--r);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;background:var(--surface)}
+.role-chip:hover{border-color:var(--accent)}
+.role-chip.selected{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+.user-pill{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.12);border-radius:3px;padding:4px 10px;font-size:12px;cursor:pointer;transition:background .15s}
+.user-pill:hover{background:rgba(255,255,255,.2)}
+.user-pill .role-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.signup-link{text-align:center;margin-top:20px;padding-top:15px;border-top:1px solid var(--border);font-size:12px}
+.signup-link a{color:var(--accent);text-decoration:none;cursor:pointer;font-weight:600}
+.warehouse-selector{background:var(--accent-light);padding:8px 12px;border-radius:var(--r);display:flex;align-items:center;gap:10px;margin-bottom:15px;flex-wrap:wrap}
+.warehouse-selector label{font-size:12px;font-weight:600;color:var(--accent)}
+.warehouse-selector select{font-family:var(--font);font-size:13px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);flex:1;min-width:150px}
+.warehouse-badge{background:var(--green-light);color:var(--green);padding:4px 12px;border-radius:var(--r);font-size:12px;font-weight:600}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:6px;padding:24px;max-width:450px;width:90%;box-shadow:var(--shadow-md);position:relative}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:16px}
+.modal-close{position:absolute;top:12px;left:12px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted)}
+.modal-close:hover{color:var(--ink)}
+.info-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--paper);font-size:12px}
+.info-row:last-of-type{border-bottom:none}
+.info-key{color:var(--muted);font-weight:500}
+.info-val{font-weight:600;text-align:left}
+
+/* NAV */
+.topbar{background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:52px;position:sticky;top:0;z-index:100}
+.topbar-brand{font-size:15px;font-weight:700;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
+.topbar-brand .dot{width:8px;height:8px;background:var(--accent);border-radius:50%;display:inline-block}
+.topbar-nav{display:flex;gap:4px}
+.tab-btn{background:none;border:none;color:rgba(255,255,255,.55);font-family:var(--font);font-size:13px;padding:6px 14px;border-radius:3px;cursor:pointer;transition:all .15s}
+.tab-btn:hover{color:#fff;background:rgba(255,255,255,.1)}
+.tab-btn.active{color:#fff;background:rgba(255,255,255,.15);font-weight:600}
+
+/* LAYOUT */
+.page{display:none;max-width:1100px;margin:0 auto;padding:28px 20px}
+.page.active{display:block}
+
+/* PAGE TITLES */
+.page-head{margin-bottom:24px}
+.page-head h1{font-size:22px;font-weight:700;letter-spacing:-.4px}
+.page-head p{font-size:13px;color:var(--muted);margin-top:4px}
+
+/* DATE SELECTOR BAR */
+.date-bar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.date-bar label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.date-input{font-family:var(--font);font-size:13px;border:1px solid var(--border);border-radius:var(--r);padding:7px 12px;background:var(--surface);color:var(--ink);cursor:pointer}
+.date-input:focus{outline:none;border-color:var(--accent)}
+.day-nav{display:flex;gap:4px}
+.day-btn{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;font-size:12px;cursor:pointer;color:var(--muted);transition:all .15s}
+.day-btn:hover{border-color:var(--accent);color:var(--accent)}
+.today-badge{font-size:11px;font-family:var(--mono);background:var(--accent-light);color:var(--accent);border:1px solid #f8c9b3;border-radius:3px;padding:3px 8px;font-weight:500}
+
+/* STATS ROW */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
+.stat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px}
+.stat-val{font-size:26px;font-weight:700;font-family:var(--mono);letter-spacing:-1px}
+.stat-val.green{color:var(--green)}.stat-val.amber{color:var(--amber)}.stat-val.red{color:var(--red)}.stat-val.accent{color:var(--accent)}
+
+/* SLOT GRID */
+.slot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.slot-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:all .18s;position:relative}
+.slot-card:hover{border-color:var(--accent);box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.slot-card.booked{background:var(--green-light);border-color:#a3d9bc;cursor:default}
+.slot-card.booked:hover{transform:none;box-shadow:var(--shadow)}
+.slot-card.blocked{background:#f5f5f5;border-color:#ddd;opacity:.6;cursor:not-allowed}
+.slot-card.blocked:hover{transform:none;border-color:#ddd}
+.slot-time{font-size:16px;font-weight:700;font-family:var(--mono);letter-spacing:-.5px;margin-bottom:6px}
+.slot-status{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.slot-status::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.slot-card.available .slot-status{color:var(--muted)}.slot-card.available .slot-status::before{background:#ccc}
+.slot-card.booked .slot-status{color:var(--green)}.slot-card.booked .slot-status::before{background:var(--green)}
+.slot-card.blocked .slot-status{color:var(--muted)}.slot-card.blocked .slot-status::before{background:#bbb}
+.slot-info{font-size:11px;color:var(--muted);line-height:1.5}
+.slot-info strong{color:var(--ink);font-weight:600}
+.slot-capacity{font-size:10px;color:var(--green);margin-top:5px;font-weight:600}
+.capacity-full{color:var(--red)}
+.capacity-warning{color:var(--amber)}
+
+/* SUPPLIER PORTAL */
+.booking-layout{display:grid;grid-template-columns:1fr 1.4fr;gap:20px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;box-shadow:var(--shadow)}
+.panel h2{font-size:15px;font-weight:700;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{width:100%;font-family:var(--font);font-size:13px;border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;background:var(--paper);color:var(--ink);transition:border-color .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.form-group input:read-only{background:#f0f0ec;color:#555}
+.form-group textarea{resize:vertical;min-height:70px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.radio-group{display:flex;gap:16px;align-items:center;margin-top:6px}
+.radio-group label{display:flex;align-items:center;gap:6px;font-weight:400;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);cursor:pointer}
+.radio-group input[type="radio"]{width:16px;height:16px;margin:0;cursor:pointer}
+.btn-primary{width:100%;font-family:var(--font);font-size:14px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:11px;cursor:pointer;transition:background .15s;letter-spacing:.2px}
+.btn-primary:hover{background:#c94d1a}
+.btn-primary:disabled{background:#ccc;cursor:not-allowed}
+.capacity-warning-msg{background:var(--amber-light);border:1px solid #e8d08a;color:var(--amber);padding:8px 12px;border-radius:var(--r);font-size:12px;margin-bottom:10px;display:none}
+.capacity-warning-msg.show{display:block}
+.capacity-error-msg{background:var(--red-light);border:1px solid #f0b9b5;color:var(--red);padding:8px 12px;border-radius:var(--r);font-size:12px;margin-bottom:10px;display:none}
+.capacity-error-msg.show{display:block}
+
+/* SLOTS PICKER */
+.slots-picker-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:380px;overflow-y:auto;padding-right:4px}
+.slot-pick{border:1.5px solid var(--border);border-radius:var(--r);padding:10px 8px;text-align:center;cursor:pointer;transition:all .15s;background:var(--surface)}
+.slot-pick:hover:not(.taken){border-color:var(--accent);background:var(--accent-light)}
+.slot-pick.selected{border-color:var(--accent);background:var(--accent);color:#fff}
+.slot-pick.selected .sp-time{color:#fff}.slot-pick.selected .sp-cap{color:rgba(255,255,255,.75)}
+.slot-pick.taken{background:#f5f5f5;border-color:#ddd;cursor:not-allowed;opacity:.55}
+.slot-pick.full{background:var(--red-light);border-color:var(--red);opacity:.7}
+.slot-pick.warning{background:var(--amber-light);border-color:var(--amber)}
+.sp-time{font-size:13px;font-weight:700;font-family:var(--mono)}
+.sp-cap{font-size:10px;color:var(--muted);margin-top:2px}
+.sp-capacity{font-size:9px;color:var(--green);margin-top:3px}
+.sp-capacity.full{color:var(--red)}
+.sp-capacity.warning{color:var(--amber)}
+
+/* BOOKINGS TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:0 10px 10px 0;border-bottom:1.5px solid var(--border);white-space:nowrap}
+tbody td{padding:10px 10px 10px 0;border-bottom:1px solid var(--paper);vertical-align:middle}
+tbody tr:hover td{background:#fafaf8}
+.badge{display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:3px;letter-spacing:.4px}
+.badge-green{background:var(--green-light);color:var(--green)}.badge-blue{background:var(--blue-light);color:var(--blue)}
+.badge-gray{background:#f1f1f1;color:#666;border:1px solid #e2e2e2}
+.badge-red{background:var(--red-light);color:var(--red)}
+.badge-amber{background:var(--amber-light);color:var(--amber)}
+.action-btns{display:flex;gap:5px;flex-wrap:wrap}
+.btn-sm{font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:3px;border:1px solid;cursor:pointer;transition:all .15s}
+.btn-details{background:var(--blue-light);color:var(--blue);border-color:#b5caf5}.btn-details:hover{background:var(--blue);color:#fff}
+.btn-cancel{background:var(--amber-light);color:var(--amber);border-color:#e8d08a}.btn-cancel:hover{background:var(--amber);color:#fff}
+.btn-complete{background:var(--green-light);color:var(--green);border-color:#a3d9bc}.btn-complete:hover{background:var(--green);color:#fff}
+
+/* TRACKER */
+.tracker-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;box-shadow:var(--shadow);margin-top:20px}
+.tracker-step{display:flex;align-items:flex-start;gap:14px;margin-bottom:16px}
+.tracker-step:last-child{margin-bottom:0}
+.step-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;border:2px solid var(--border)}
+.step-icon.done{background:var(--green);border-color:var(--green);color:#fff}
+.step-icon.current{background:var(--accent);border-color:var(--accent);color:#fff}
+.step-icon.pending-step{background:#f5f5f5;border-color:#ddd;color:var(--muted)}
+.step-body{flex:1}
+.step-title{font-size:13px;font-weight:600;margin-bottom:2px}
+.step-desc{font-size:11px;color:var(--muted)}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty-state .icon{font-size:36px;margin-bottom:10px}
+.empty-state p{font-size:13px}
+
+/* RESPONSIVE */
+@media(max-width:800px){
+  .slot-grid{grid-template-columns:repeat(2,1fr)}
+  .booking-layout{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .slots-picker-grid{grid-template-columns:repeat(2,1fr)}
+  .form-row-3{grid-template-columns:1fr}
+}
+@media(max-width:500px){.slot-grid{grid-template-columns:1fr}.topbar-nav .tab-btn{font-size:11px;padding:6px 8px}}
+
+/* REPORTS */
+.reports-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px}
+.report-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;box-shadow:var(--shadow)}
+.report-card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.report-card-title{font-size:14px;font-weight:700}
+.report-card-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.report-filters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
+.report-filters .date-input,.report-filters select{min-width:140px}
+.report-kpis{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:6px 0 10px}
+.kpi{min-width:72px;text-align:center}
+.kpi .v{font-family:var(--mono);font-size:18px;font-weight:800;line-height:1}
+.kpi .l{font-size:10px;color:var(--muted);font-weight:700;margin-top:2px}
+.btn-export{font-family:var(--font);font-size:12px;font-weight:700;background:var(--green);color:#fff;border:none;border-radius:3px;padding:8px 16px;cursor:pointer}
+.btn-export-all{font-family:var(--font);font-size:13px;font-weight:700;background:var(--ink);color:#fff;border:none;border-radius:var(--r);padding:10px 22px;cursor:pointer}
+.preview-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px}
+.preview-table thead th{text-align:right;font-size:9px;font-weight:700;color:var(--muted);padding:0 8px 7px 0}
+.preview-table tbody td{padding:7px 8px 7px 0}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo"><span class="dot"></span><span>استلامات المخازن</span></div>
+    <div class="login-title">تسجيل الدخول</div>
+    <div class="login-sub">اختر دورك وأدخل بياناتك للدخول</div>
+    
+
+    <div class="login-roles">
+      <div class="role-chip selected" id="roleChipWarehouse">🏭 مدير المخازن</div>
+      <div class="role-chip" id="roleChipSupplier">🚚 المورد</div>
+    </div>
+
+    <div class="login-error" id="loginError">اسم المستخدم أو كلمة المرور غلط</div>
+    <div class="login-group">
+      <label>اسم المستخدم</label>
+      <input type="text" id="loginUser" placeholder="أدخل اسم المستخدم">
+    </div>
+    <div class="login-group">
+      <label>كلمة المرور</label>
+      <input type="password" id="loginPass" placeholder="أدخل كلمة المرور">
+    </div>
+    <div style="text-align:left;margin:-8px 0 10px">
+      <button type="button" id="forgotPassBtn" style="all:unset;color:var(--accent);cursor:pointer;font-size:12px;font-weight:600">نسيت كلمة المرور؟</button>
+    </div>
+    <button class="login-btn" id="loginBtn">دخول ←</button>
+    
+    <div class="signup-link" style="opacity:.8">
+      لإنشاء حسابات موردين يرجى التواصل مع الإدارة
+    </div>
+  </div>
+</div>
+
+<!-- SIGNUP MODAL (disabled) -->
+<div class="modal-overlay" id="signupModal" onclick="this.classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" id="closeSignupBtn" type="button" onclick="document.getElementById('signupModal')?.classList.remove('open')">✕</button>
+    <h3>📝 إنشاء حساب مورد جديد</h3>
+    <div class="empty-state"><p>تم إيقاف إنشاء حسابات الموردين من داخل النظام.</p></div>
+  </div>
+</div>
+
+<!-- FORGOT PASSWORD MODAL -->
+<div class="modal-overlay" id="forgotModal" onclick="this.classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" id="closeForgotBtn" type="button" onclick="document.getElementById('forgotModal')?.classList.remove('open')">✕</button>
+    <h3>🔑 استعادة كلمة المرور</h3>
+    <div class="form-group"><label>اسم المستخدم</label><input type="text" id="forgotUsername" placeholder="اكتب اسم المستخدم"></div>
+    <div class="form-group"><label>البريد الإلكتروني</label><input type="email" id="forgotEmail" placeholder="example@domain.com"></div>
+    <div class="form-group"><label>كلمة مرور جديدة</label><input type="password" id="forgotNewPassword" placeholder="أدخل كلمة مرور جديدة"></div>
+    <div class="form-group"><label>تأكيد كلمة المرور</label><input type="password" id="forgotConfirmPassword" placeholder="أعد إدخال كلمة المرور"></div>
+    <button class="btn-primary" id="doResetBtn">تحديث كلمة المرور</button>
+  </div>
+</div>
+
+<script>
+// Fallback: ensure signup modal functions exist even if main script fails.
+function showSignupModal(){
+  var m = document.getElementById('signupModal');
+  if (!m) return;
+  m.classList.add('open');
+}
+function closeSignupModal(){
+  var m = document.getElementById('signupModal');
+  if (!m) return;
+  m.classList.remove('open');
+}
+</script>
+
+<!-- TOPBAR -->
+<nav class="topbar" id="topbar" style="display:none">
+  <div class="topbar-brand"><span class="dot"></span> استلامات المخازن</div>
+  <div class="topbar-nav" id="topbarNav"></div>
+  <div class="user-pill" id="logoutBtn">
+    <span class="role-dot"></span>
+    <span id="userPillLabel">—</span>
+    <span style="opacity:.5;font-size:10px">خروج</span>
+  </div>
+</nav>
+
+<!-- WAREHOUSE USERS (ADMIN) MODAL -->
+<div class="modal-overlay" id="usersModal" onclick="this.classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" type="button" onclick="document.getElementById('usersModal')?.classList.remove('open')">✕</button>
+    <h3>👤 إدارة مستخدمي المخازن</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">تعديل أسماء المستخدمين وكلمات المرور لمستخدمي المخازن (الادمن فقط).</div>
+    <div style="overflow:auto;max-height:320px">
+      <table class="preview-table" style="margin-top:0">
+        <thead>
+          <tr><th>المستخدم</th><th>كلمة المرور</th><th>الصلاحية</th><th>المخزن</th><th></th></tr>
+        </thead>
+        <tbody id="usersTbody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn-sm btn-details" type="button" onclick="addWarehouseUserRow()">+ إضافة</button>
+      <button class="btn-sm btn-cancel" type="button" onclick="resetWarehouseUsersToDefault()">إعادة ضبط</button>
+      <button class="btn-primary" type="button" id="saveUsersBtn">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUPPLIER USERS (ADMIN) MODAL -->
+<div class="modal-overlay" id="supplierUsersModal" onclick="this.classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" type="button" onclick="document.getElementById('supplierUsersModal')?.classList.remove('open')">✕</button>
+    <h3>🚚 إدارة مستخدمي الموردين</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">إضافة/حذف/تعديل مستخدمي الموردين (الادمن فقط).</div>
+    <div style="overflow:auto;max-height:320px">
+      <table class="preview-table" style="margin-top:0">
+        <thead>
+          <tr><th>المستخدم</th><th>البريد</th><th>كلمة المرور</th><th>اسم الشركة</th><th>المخزن الافتراضي</th><th></th></tr>
+        </thead>
+        <tbody id="supplierUsersTbody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn-sm btn-details" type="button" onclick="addSupplierUserRow()">+ إضافة</button>
+      <button class="btn-sm btn-cancel" type="button" onclick="resetSupplierUsersToDefault()">إعادة ضبط</button>
+      <button class="btn-primary" type="button" id="saveSupplierUsersBtn">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- WAREHOUSE PAGE -->
+<div class="page" id="page-warehouse">
+  <div class="page-head">
+    <h1>لوحة تحكم المخازن</h1>
+    <p>إدارة الـ slots لجميع المخازن - الحد الأقصى 5 عربيات لكل موعد</p>
+  </div>
+  
+  <div class="warehouse-selector">
+    <label>🏭 اختر المخزن:</label>
+    <select id="selectedWarehouse">
+      <option value="warehouse1">المخزن الأول</option>
+      <option value="warehouse2">المخزن الثاني</option>
+      <option value="warehouse3">المخزن الثالث</option>
+      <option value="warehouse4">المخزن الرابع</option>
+    </select>
+  </div>
+  
+  <div class="date-bar">
+    <label>التاريخ</label>
+    <input type="date" class="date-input" id="whDate">
+    <div class="day-nav">
+      <button class="day-btn" id="prevDayBtn">◄ السابق</button>
+      <button class="day-btn" id="nextDayBtn">التالي ►</button>
+    </div>
+    <span class="today-badge" id="todayBadge"></span>
+  </div>
+  <div class="stats-row" id="whStats"></div>
+  <div class="slot-grid" id="whSlotGrid"></div>
+</div>
+
+<!-- SUPPLIER PAGE -->
+<div class="page" id="page-supplier">
+  <div class="page-head">
+    <h1>بوابة المورد</h1>
+    <p>احجز موعد استلام (من 9 صباحاً إلى 4 مساءً - الحد الأقصى 5 عربيات لكل موعد)</p>
+  </div>
+  
+  <!-- اختيار المخزن عند الحجز -->
+  <div class="warehouse-selector">
+    <label>🏭 اختر المخزن المراد الحجز فيه:</label>
+    <select id="bookingWarehouseSelect">
+      <option value="warehouse1">🏭 المخزن الأول</option>
+      <option value="warehouse2">🏭 المخزن الثاني</option>
+      <option value="warehouse3">🏭 المخزن الثالث</option>
+      <option value="warehouse4">🏭 المخزن الرابع</option>
+    </select>
+  </div>
+  
+  <div class="alert alert-success" id="bookAlert"></div>
+  <div class="capacity-warning-msg" id="capacityWarningMsg">
+    ⚠️ تنبيه: السعة المتبقية في هذا الموعد محدودة!
+  </div>
+  <div class="capacity-error-msg" id="capacityErrorMsg">
+    ❌ لا يمكن حجز هذا العدد من العربيات! السعة المتبقية أقل من العدد المطلوب.
+  </div>
+  <div class="booking-layout">
+    <div class="panel">
+      <h2>📅 احجز موعد جديد</h2>
+      <div class="form-group"><label>اسم المورد / الشركة</label><input type="text" id="supName" readonly style="background:#f0f0ec"></div>
+      <div class="form-row">
+        <div class="form-group"><label>رقم الأوردر</label><input type="text" id="supOrder" placeholder="PO-12345"></div>
+        <div class="form-group"><label>نوع البضاعة <span style="color:red">*</span></label><select id="supType"><option value="">اختر...</option><option>مواد غذائية</option><option>مواد تعبئة</option><option>مواد خام</option><option>منتجات مبردة</option><option>منتجات مجمدة</option><option>أخرى</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>رقم السيارة</label><input type="text" id="supPlate" placeholder="أ ب ج 1234"></div>
+        <div class="form-group"><label>اسم السائق</label><input type="text" id="supDriver" placeholder="محمد أحمد"></div>
+      </div>
+      <div class="form-row-3">
+        <div class="form-group"><label>نوع العربية <span style="color:red">*</span></label><select id="supTruckType"><option value="">اختر...</option><option>جامبو</option><option>دبابة</option><option>تريلا</option></select></div>
+        <div class="form-group"><label>عدد العربيات <span style="color:red">*</span></label><input type="number" id="supTruckCount" min="1" max="5" value="1" oninput="checkCapacity()"></div>
+        <div class="form-group"><label>عدد الكراتين <span style="color:red">*</span></label><input type="number" id="supCartons" min="1" value="1"></div>
+      </div>
+      <div class="form-group"><label>التحميل على بالتات</label><div class="radio-group"><label><input type="radio" name="palletLoading" value="نعم"> نعم</label><label><input type="radio" name="palletLoading" value="لا" checked> لا</label></div></div>
+      <div class="form-row"><div class="form-group"><label>التاريخ <span style="color:red">*</span></label><input type="date" id="supDate" onchange="renderSupplierSlots()"></div></div>
+      <div class="form-group"><label>ملاحظات</label><textarea id="supNotes" placeholder="أي تفاصيل إضافية..."></textarea></div>
+      <button class="btn-primary" id="bookBtn" disabled>اختر الوقت أولاً ↓</button>
+    </div>
+    <div>
+      <div class="panel"><h2>⏰ اختر الوقت (9ص - 4م)</h2><div class="slots-picker-grid" id="supplierSlots"><div class="empty-state"><div class="icon">📅</div><p>اختر التاريخ أولاً</p></div></div></div>
+      <div class="tracker-wrap" id="trackerWrap" style="display:none"><h2>📦 تتبع حجزك</h2><div class="form-row" style="margin-bottom:12px"><div class="form-group" style="margin:0"><label>رقم الحجز</label><input type="text" id="trackId" placeholder="HYG-XXXX"></div><button class="btn-primary" id="trackBtn" style="width:auto;padding:8px 18px">تتبع</button></div><div id="trackResult"></div></div>
+      <button class="btn-primary" id="showTrackerBtn" style="background:var(--ink);margin-top:12px">🔍 تتبع حجز موجود</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOOKINGS PAGE -->
+<div class="page" id="page-bookings">
+  <div class="page-head"><h1>كل الحجوزات</h1><p>عرض وإدارة جميع الحجوزات</p></div>
+  <div class="warehouse-selector">
+    <label>🏭 اختر المخزن:</label>
+    <select id="bookingsWarehouseFilter">
+      <option value="">كل المخازن</option>
+      <option value="warehouse1">المخزن الأول</option>
+      <option value="warehouse2">المخزن الثاني</option>
+      <option value="warehouse3">المخزن الثالث</option>
+      <option value="warehouse4">المخزن الرابع</option>
+    </select>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <select class="date-input" id="filterStatus"><option value="">كل الحالات</option><option value="approved">مؤكد</option><option value="completed">مكتمل</option></select>
+    <input type="date" class="date-input" id="filterDate">
+    <input type="text" class="date-input" id="filterSearch" placeholder="بحث..." style="flex:1">
+  </div>
+  <div class="table-wrap"><table id="bookingsTable"><thead><tr><th>رقم الحجز</th><th>المخزن</th><th>المورد</th><th>رقم الأوردر</th><th>التاريخ</th><th>الوقت</th><th>نوع البضاعة</th><th>العربية</th><th>عدد العربيات</th><th>الكراتين</th><th>بالتات</th><th>السيارة/السائق</th><th>وقت الدخول</th><th>وقت الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="bookingsTbody"></tbody></table></div>
+</div>
+
+<!-- REPORTS PAGE -->
+<div class="page" id="page-reports">
+  <div class="page-head"><h1>📊 التقارير</h1><p>سحب تقارير Excel لكل البيانات</p></div>
+  <div class="warehouse-selector">
+    <label>🏭 اختر المخزن:</label>
+    <select id="reportsWarehouseFilter">
+      <option value="">كل المخازن</option>
+      <option value="warehouse1">المخزن الأول</option>
+      <option value="warehouse2">المخزن الثاني</option>
+      <option value="warehouse3">المخزن الثالث</option>
+      <option value="warehouse4">المخزن الرابع</option>
+    </select>
+  </div>
+  <button class="btn-export-all" id="exportAllBtn" style="margin-bottom:20px">⬇ تحميل كل التقارير في ملف واحد</button>
+
+  <div class="reports-grid">
+    <!-- Daily schedule (slots) -->
+    <div class="report-card">
+      <div class="report-card-head">
+        <div>
+          <div class="report-card-title">📅 جدول يوم</div>
+          <div class="report-card-sub">يعرض حالة كل Slot والطلب المرتبط</div>
+        </div>
+      </div>
+      <div class="report-filters">
+        <input type="date" class="date-input" id="rDailyDate">
+      </div>
+      <div class="report-kpis">
+        <div class="kpi"><div class="v" id="rDailyKpiBlocked">0</div><div class="l">مغلق</div></div>
+        <div class="kpi"><div class="v" id="rDailyKpiAvailable">0</div><div class="l">متاح</div></div>
+        <div class="kpi"><div class="v" id="rDailyKpiWaiting">0</div><div class="l">انتظار</div></div>
+        <div class="kpi"><div class="v" id="rDailyKpiBooked">0</div><div class="l">محجوز</div></div>
+      </div>
+      <div style="overflow-x:auto;max-height:260px">
+        <table class="preview-table">
+          <thead><tr><th>الوقت</th><th>الحالة</th><th>المورد</th><th>رقم الأوردر</th><th>السيارة</th></tr></thead>
+          <tbody id="rDailyPreview"></tbody>
+        </table>
+      </div>
+      <button class="btn-export" id="exportDailyBtn" style="margin-top:12px">⬇ Excel</button>
+    </div>
+
+    <!-- All bookings -->
+    <div class="report-card">
+      <div class="report-card-head">
+        <div>
+          <div class="report-card-title">📋 كل الحجوزات</div>
+          <div class="report-card-sub">يعرض الحجوزات بالتفاصيل مع فلترة التاريخ والحالة</div>
+        </div>
+      </div>
+      <div class="report-filters">
+        <input type="date" class="date-input" id="rBookingsFrom">
+        <input type="date" class="date-input" id="rBookingsTo">
+        <select class="date-input" id="rBookingsStatus">
+          <option value="">كل الحالات</option>
+          <option value="pending">معلق</option>
+          <option value="approved">مؤكد</option>
+          <option value="completed">مكتمل</option>
+          <option value="rejected">مرفوض</option>
+        </select>
+      </div>
+      <div class="report-kpis">
+        <div class="kpi"><div class="v" id="rBookingsKpiTotal">0</div><div class="l">إجمالي</div></div>
+        <div class="kpi"><div class="v" id="rBookingsKpiApproved">0</div><div class="l">مؤكد</div></div>
+        <div class="kpi"><div class="v" id="rBookingsKpiCompleted">0</div><div class="l">مكتمل</div></div>
+        <div class="kpi"><div class="v" id="rBookingsKpiRejected">0</div><div class="l">مرفوض</div></div>
+      </div>
+      <div style="overflow-x:auto;max-height:260px">
+        <table class="preview-table">
+          <thead><tr><th>رقم الحجز</th><th>التاريخ</th><th>الوقت</th><th>المورد</th><th>الحالة</th></tr></thead>
+          <tbody id="rBookingsPreview"></tbody>
+        </table>
+      </div>
+      <button class="btn-export" id="exportBookingsBtn" style="margin-top:12px">⬇ Excel</button>
+    </div>
+
+    <!-- Slots utilization -->
+    <div class="report-card">
+      <div class="report-card-head">
+        <div>
+          <div class="report-card-title">📈 استخدام الـ Slots</div>
+          <div class="report-card-sub">تقرير يومي لنسبة الإشغال وحالات الـ Slots</div>
+        </div>
+      </div>
+      <div class="report-filters">
+        <input type="date" class="date-input" id="rUtilFrom">
+        <input type="date" class="date-input" id="rUtilTo">
+      </div>
+      <div style="overflow-x:auto;max-height:260px">
+        <table class="preview-table">
+          <thead><tr><th>التاريخ</th><th>محجوز</th><th>انتظار</th><th>مغلق</th><th>متاح</th><th>% إشغال</th></tr></thead>
+          <tbody id="rUtilPreview"></tbody>
+        </table>
+      </div>
+      <button class="btn-export" id="exportUtilBtn" style="margin-top:12px">⬇ Excel</button>
+    </div>
+
+    <!-- Supplier summary -->
+    <div class="report-card">
+      <div class="report-card-head">
+        <div>
+          <div class="report-card-title">🏢 ملخص الموردين</div>
+          <div class="report-card-sub">ملخص حسب المورد خلال فترة</div>
+        </div>
+      </div>
+      <div class="report-filters">
+        <input type="date" class="date-input" id="rSupFrom">
+        <input type="date" class="date-input" id="rSupTo">
+      </div>
+      <div style="overflow-x:auto;max-height:260px">
+        <table class="preview-table">
+          <thead><tr><th>المورد</th><th>إجمالي</th><th>مؤكد</th><th>مكتمل</th><th>مرفوض</th></tr></thead>
+          <tbody id="rSupPreview"></tbody>
+        </table>
+      </div>
+      <button class="btn-export" id="exportSupBtn" style="margin-top:12px">⬇ Excel</button>
+    </div>
+
+    <!-- Blocked slots -->
+    <div class="report-card">
+      <div class="report-card-head">
+        <div>
+          <div class="report-card-title">⛔ Slots المقفولة</div>
+          <div class="report-card-sub">عرض كل الـ slots التي تم غلقها خلال فترة</div>
+        </div>
+      </div>
+      <div class="report-filters">
+        <input type="date" class="date-input" id="rBlockedFrom">
+        <input type="date" class="date-input" id="rBlockedTo">
+      </div>
+      <div style="overflow-x:auto;max-height:260px">
+        <table class="preview-table">
+          <thead><tr><th>المخزن</th><th>التاريخ</th><th>الوقت</th></tr></thead>
+          <tbody id="rBlockedPreview"></tbody>
+        </table>
+      </div>
+      <button class="btn-export" id="exportBlockedBtn" style="margin-top:12px">⬇ Excel</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal()"><div class="modal" onclick="event.stopPropagation()"><button class="modal-close" id="closeModalBtn" type="button" onclick="closeModal()">✕</button><h3 id="modalTitle">تفاصيل الحجز</h3><div id="modalBody"></div><div style="display:flex;gap:8px;margin-top:16px" id="modalActions"></div></div></div>
+
+<script>
+// ==================== DATA ====================
+const WAREHOUSES = {
+  warehouse1: { id: 'warehouse1', name: 'المخزن الأول', code: 'WH1' },
+  warehouse2: { id: 'warehouse2', name: 'المخزن الثاني', code: 'WH2' },
+  warehouse3: { id: 'warehouse3', name: 'المخزن الثالث', code: 'WH3' },
+  warehouse4: { id: 'warehouse4', name: 'المخزن الرابع', code: 'WH4' }
+};
+
+const SLOTS_PER_DAY = [
+  '09:00','09:30','10:00','10:30','11:00','11:30',
+  '12:00','12:30','13:00','13:30','14:00','14:30',
+  '15:00','15:30','16:00'
+];
+
+const SLOT_CAPACITY = 5;
+
+let warehouseData = {};
+// ==================== USERS ====================
+// NOTE: This app stores users in localStorage.
+// The configuration below resets supplier users to a single admin-supplier account.
+let suppliers = JSON.parse(localStorage.getItem('suppliers') || '[]');
+
+// Supplier users are stored in localStorage so admin can edit them in-app.
+// Default: one supplier admin.
+const SUPPLIER_USERS_STORAGE_KEY = 'suppliers';
+function defaultSupplierUsers() {
+  return [
+    {
+      username: 'supplier_admin',
+      password: 'supplier@123',
+      email: 'supplier_admin@example.com',
+      company: 'ادمن المورد',
+      defaultWarehouse: 'warehouse1',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+}
+
+function loadSupplierUsers() {
+  try {
+    let raw = localStorage.getItem(SUPPLIER_USERS_STORAGE_KEY);
+    if (!raw) {
+      let def = defaultSupplierUsers();
+      localStorage.setItem(SUPPLIER_USERS_STORAGE_KEY, JSON.stringify(def));
+      return def;
+    }
+    let parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      let def = defaultSupplierUsers();
+      localStorage.setItem(SUPPLIER_USERS_STORAGE_KEY, JSON.stringify(def));
+      return def;
+    }
+    return parsed;
+  } catch (e) {
+    let def = defaultSupplierUsers();
+    localStorage.setItem(SUPPLIER_USERS_STORAGE_KEY, JSON.stringify(def));
+    return def;
+  }
+}
+
+function saveSupplierUsers(users) {
+  localStorage.setItem(SUPPLIER_USERS_STORAGE_KEY, JSON.stringify(users || []));
+}
+
+// Initialize suppliers from storage
+suppliers = loadSupplierUsers();
+
+function initWarehouseData() {
+  for (let whId in WAREHOUSES) {
+    if (!warehouseData[whId]) {
+      warehouseData[whId] = {
+        bookings: JSON.parse(localStorage.getItem(`whBookings_${whId}`) || '[]'),
+        blockedSlots: JSON.parse(localStorage.getItem(`whBlocked_${whId}`) || '[]')
+      };
+    }
+  }
+}
+
+// ==================== SYNC WITH GOOGLE SHEETS ====================
+let dataLoadPromise = null;
+
+async function loadWarehouseDataFromApi() {
+  try {
+    // Load bookings
+    const bRes = await apiGet('listBookings');
+    const bookings = (bRes && bRes.ok && Array.isArray(bRes.data)) ? bRes.data : [];
+    // Load blocked slots
+    const blRes = await apiGet('listBlockedSlots');
+    const blocked = (blRes && blRes.ok && Array.isArray(blRes.data)) ? blRes.data : [];
+
+    // Ensure base structure
+    for (let whId in WAREHOUSES) {
+      warehouseData[whId] = warehouseData[whId] || { bookings: [], blockedSlots: [] };
+      warehouseData[whId].bookings = [];
+      warehouseData[whId].blockedSlots = [];
+    }
+
+    bookings.forEach(b => {
+      const whId = b.warehouseId || b.warehouse || b.warehouseid;
+      if (!whId || !warehouseData[whId]) return;
+      warehouseData[whId].bookings.push({
+        id: b.id,
+        warehouse: whId,
+        supplier: b.supplier || '',
+        orderNum: b.orderNum || '',
+        goodsType: b.goodsType || '',
+        plate: b.plate || '',
+        driver: b.driver || '',
+        truckType: b.truckType || '',
+        truckCount: parseInt(b.truckCount) || 1,
+        cartons: parseInt(b.cartons) || 1,
+        palletLoading: b.palletLoading || '',
+        date: b.date || '',
+        time: b.time || '',
+        status: b.status || 'approved',
+        notes: b.notes || '',
+        createdAt: b.createdAt || '',
+        checkInTime: b.checkInTime || '',
+        checkOutTime: b.checkOutTime || '',
+        cancelledAt: b.cancelledAt || '',
+      });
+    });
+
+    blocked.forEach(x => {
+      const whId = x.warehouseId || x.warehouse || x.warehouseid;
+      const date = x.date || '';
+      const time = x.time || '';
+      if (!whId || !warehouseData[whId] || !date || !time) return;
+      warehouseData[whId].blockedSlots.push(getSlotKey(date, time));
+    });
+
+    // Optional: still cache locally (offline fallback)
+    for (let whId in WAREHOUSES) {
+      localStorage.setItem(`whBookings_${whId}`, JSON.stringify(warehouseData[whId].bookings));
+      localStorage.setItem(`whBlocked_${whId}`, JSON.stringify(warehouseData[whId].blockedSlots));
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function ensureDataLoaded() {
+  if (!dataLoadPromise) {
+    dataLoadPromise = loadWarehouseDataFromApi();
+  }
+  return dataLoadPromise;
+}
+
+function saveWarehouseData(whId) {
+  localStorage.setItem(`whBookings_${whId}`, JSON.stringify(warehouseData[whId].bookings));
+  localStorage.setItem(`whBlocked_${whId}`, JSON.stringify(warehouseData[whId].blockedSlots));
+}
+
+async function upsertBookingToApi(whId, booking) {
+  try {
+    await apiPost('upsertBooking', {
+      id: booking.id,
+      warehouseId: whId,
+      supplier: booking.supplier || '',
+      orderNum: booking.orderNum || '',
+      goodsType: booking.goodsType || '',
+      plate: booking.plate || '',
+      driver: booking.driver || '',
+      truckType: booking.truckType || '',
+      truckCount: booking.truckCount || 1,
+      cartons: booking.cartons || 1,
+      palletLoading: booking.palletLoading || '',
+      date: booking.date || '',
+      time: booking.time || '',
+      status: booking.status || '',
+      createdAt: booking.createdAt || '',
+      checkInTime: booking.checkInTime || '',
+      checkOutTime: booking.checkOutTime || '',
+      cancelledAt: booking.cancelledAt || '',
+      notes: booking.notes || '',
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function upsertBlockedSlotToApi(whId, date, time, isBlockedNow) {
+  try {
+    const id = `${whId}|${date}|${time}`;
+    if (isBlockedNow) {
+      await apiPost('upsertBlockedSlot', {
+        id,
+        warehouseId: whId,
+        date,
+        time,
+        reason: 'manual',
+        createdAt: nowIso(),
+      });
+    } else {
+      // If you added delete endpoint later, you can delete here.
+      // For now we just keep a record (optional). Uncomment if you add deleteBlockedSlot.
+      // await apiPost('deleteBlockedSlot', { id });
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ==================== HELPERS (Reports) ====================
+function getAllBookings(whFilter) {
+  let list = [];
+  for (let whId in WAREHOUSES) {
+    if (whFilter && whId !== whFilter) continue;
+    let whName = WAREHOUSES[whId].name;
+    (warehouseData[whId]?.bookings || []).forEach(b => list.push({ ...b, warehouseId: whId, warehouseName: whName }));
+  }
+  return list.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+}
+
+function getAllBlockedSlots(whFilter) {
+  let list = [];
+  for (let whId in WAREHOUSES) {
+    if (whFilter && whId !== whFilter) continue;
+    let whName = WAREHOUSES[whId].name;
+    (warehouseData[whId]?.blockedSlots || []).forEach(k => {
+      let parts = (k||'').split('|');
+      let date = parts[0] || '';
+      let time = parts[1] || '';
+      if (date && time) list.push({ warehouseId: whId, warehouseName: whName, date, time });
+    });
+  }
+  return list.sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+}
+
+function buildSupplierSummary(bookings) {
+  let map = {};
+  (bookings || []).forEach(b=>{
+    let key = (b.supplier||'').trim() || '—';
+    if (!map[key]) map[key] = { supplier: key, totalBookings: 0, approved: 0, completed: 0, totalTrucks: 0 };
+    map[key].totalBookings += 1;
+    if (b.status === 'approved') map[key].approved += 1;
+    if (b.status === 'completed') map[key].completed += 1;
+    map[key].totalTrucks += (parseInt(b.truckCount) || 1);
+  });
+  return Object.values(map).sort((a,b)=>b.totalBookings-a.totalBookings);
+}
+
+function genId() { return 'HYG-' + Math.random().toString(36).substr(2,4).toUpperCase(); }
+function today() { return new Date().toISOString().split('T')[0]; }
+function formatDate(d) { if (!d) return ''; let p = d.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+function getSlotKey(d,t) { return d+'|'+t; }
+
+// Excel helper (SheetJS)
+function downloadExcel(sheets, filename) {
+  if (typeof XLSX === 'undefined') { alert('⚠️ مكتبة Excel (XLSX) غير متاحة'); return; }
+  let wb = XLSX.utils.book_new();
+  sheets.forEach(({name, data}) => {
+    let ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, String(name || 'Sheet1').slice(0,31));
+  });
+  XLSX.writeFile(wb, filename || 'report.xlsx');
+}
+
+// Export all reports in one file (used by top button)
+function exportAllSheets() {
+  let whFilter = document.getElementById('reportsWarehouseFilter')?.value || '';
+  // Bookings
+  let bookingsList = getAllBookings(whFilter);
+  let bookingsRows = [["رقم الحجز","المخزن","المورد","رقم الأوردر","نوع البضاعة","نوع العربية","عدد العربيات","الكراتين","بالتات","التاريخ","الوقت","الحالة"]];
+  bookingsList.forEach(b=>bookingsRows.push([b.id, b.warehouseName, b.supplier, b.orderNum, b.goodsType, b.truckType||'', b.truckCount||'', b.cartons||'', b.palletLoading||'', formatDate(b.date), b.time, statusLabel(b.status)]));
+
+  // Supplier summary
+  let supSummary = buildSupplierSummary(bookingsList);
+  let supRows = [["المورد","عدد الحجوزات","مؤكد","مكتمل","إجمالي العربيات"]];
+  supSummary.forEach(s=>supRows.push([s.supplier, s.totalBookings, s.approved, s.completed, s.totalTrucks]));
+
+  // Blocked slots
+  let blockedList = getAllBlockedSlots(whFilter);
+  let blockedRows = [["المخزن","التاريخ","الوقت"]];
+  blockedList.forEach(x=>blockedRows.push([x.warehouseName, formatDate(x.date), x.time]));
+
+  // Daily schedule
+  let dailyDate = document.getElementById('rDailyDate')?.value || today();
+  let dailyRows = [["المخزن","التاريخ","الوقت","الحالة","المورد","رقم الأوردر","السيارة/السائق"]];
+  let whIds = whFilter ? [whFilter] : Object.keys(WAREHOUSES);
+  whIds.forEach(whId=>{
+    let whName = WAREHOUSES[whId].name;
+    SLOTS_PER_DAY.forEach(time=>{
+      if (isBlocked(whId, dailyDate, time)) {
+        dailyRows.push([whName, formatDate(dailyDate), time, 'مغلق', '', '', '']);
+        return;
+      }
+      let slotBookings = (warehouseData[whId]?.bookings || []).filter(b => b.date === dailyDate && b.time === time);
+      if (slotBookings.length) {
+        let b = slotBookings[0];
+        dailyRows.push([whName, formatDate(dailyDate), time, statusLabel(b.status), b.supplier||'', b.orderNum||'', (b.plate||'') + (b.driver?(' / '+b.driver):'')]);
+      } else {
+        dailyRows.push([whName, formatDate(dailyDate), time, 'متاح', '', '', '']);
+      }
+    })
+  });
+
+  downloadExcel([
+    { name: 'كل الحجوزات', data: bookingsRows },
+    { name: 'ملخص الموردين', data: supRows },
+    { name: 'Slots مقفولة', data: blockedRows },
+    { name: 'جدول يوم', data: dailyRows },
+  ], 'تقارير_المخازن.xlsx');
+}
+
+function isBlocked(whId, date, time) {
+  // Guard: warehouseData might not be initialized yet
+  let ds = warehouseData[whId];
+  if (!ds || !Array.isArray(ds.blockedSlots)) return false;
+  return ds.blockedSlots.includes(getSlotKey(date, time));
+}
+
+function getSlotBookedCount(whId, date, time) {
+  let ds = warehouseData[whId];
+  let slotBookings = (ds?.bookings || []).filter(b => b.date === date && b.time === time && b.status !== 'rejected');
+  return slotBookings.reduce((sum, b) => sum + (b.truckCount || 1), 0);
+}
+
+function getSlotAvailableCapacity(whId, date, time) {
+  return SLOT_CAPACITY - getSlotBookedCount(whId, date, time);
+}
+
+function slotStatus(whId, date, time) {
+  if (isBlocked(whId, date, time)) return 'blocked';
+  let available = getSlotAvailableCapacity(whId, date, time);
+  if (available <= 0) return 'full';
+  if (available === 1) return 'warning';
+  return 'available';
+}
+
+function showAlert(id, msg, type) {
+  let el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'alert alert-'+(type==='error'?'error':'success')+' show';
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+// ==================== CAPACITY CHECK ====================
+function checkCapacity() {
+  if (!currentSupplierData) return;
+  
+  let date = document.getElementById('supDate').value;
+  let truckCount = parseInt(document.getElementById('supTruckCount').value) || 1;
+  let selectedTimeElem = document.querySelector('.slot-pick.selected');
+  let time = selectedTimeElem ? selectedTimeElem.getAttribute('data-time') : null;
+  let whId = document.getElementById('bookingWarehouseSelect').value;
+  
+  let warningMsg = document.getElementById('capacityWarningMsg');
+  let errorMsg = document.getElementById('capacityErrorMsg');
+  let bookBtn = document.getElementById('bookBtn');
+  
+  if (!date || !time) {
+    warningMsg.classList.remove('show');
+    errorMsg.classList.remove('show');
+    return;
+  }
+  
+  let available = getSlotAvailableCapacity(whId, date, time);
+  
+  if (truckCount > available) {
+    errorMsg.classList.add('show');
+    warningMsg.classList.remove('show');
+    bookBtn.disabled = true;
+    bookBtn.textContent = `⛔ السعة غير كافية (متاح: ${available} عربة)`;
+  } else if (truckCount === available && available > 0) {
+    errorMsg.classList.remove('show');
+    warningMsg.classList.add('show');
+    if (bookBtn.disabled === false) {
+      bookBtn.textContent = `⚠️ احجز الساعة ${time} (آخر ${available} عربة)`;
+    }
+  } else {
+    errorMsg.classList.remove('show');
+    warningMsg.classList.remove('show');
+    if (bookBtn.disabled === false) {
+      bookBtn.textContent = `✓ احجز الساعة ${time}`;
+    }
+  }
+}
+
+// ==================== WAREHOUSE PAGE ====================
+let currentWarehouse = 'warehouse1';
+
+function renderWarehouse() {
+  let date = document.getElementById('whDate').value || today();
+  let whId = currentWarehouse;
+  let whData = warehouseData[whId];
+  let dayBookings = whData.bookings.filter(b => b.date === date && b.status !== 'rejected');
+  
+  let totalCapacity = SLOTS_PER_DAY.length * SLOT_CAPACITY;
+  let bookedTrucks = dayBookings.reduce((sum, b) => sum + (b.truckCount || 1), 0);
+  let blocked = whData.blockedSlots.filter(k => k.startsWith(date+'|')).length;
+  let availableCapacity = totalCapacity - bookedTrucks - (blocked * SLOT_CAPACITY);
+  if (availableCapacity < 0) availableCapacity = 0;
+
+  document.getElementById('whStats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">السعة المتاحة</div><div class="stat-val green">${availableCapacity}</div><div style="font-size:10px">من ${totalCapacity} عربة</div></div>
+    <div class="stat-card"><div class="stat-label">عربيات محجوزة</div><div class="stat-val accent">${bookedTrucks}</div></div>
+    <div class="stat-card"><div class="stat-label">Slots مغلقة</div><div class="stat-val">${blocked}</div></div>
+    <div class="stat-card"><div class="stat-label">إجمالي الحجوزات</div><div class="stat-val">${dayBookings.length}</div></div>
+  `;
+
+  let grid = document.getElementById('whSlotGrid');
+  grid.innerHTML = SLOTS_PER_DAY.map(time => {
+    let st = slotStatus(whId, date, time);
+    let bookedCount = getSlotBookedCount(whId, date, time);
+    let available = SLOT_CAPACITY - bookedCount;
+    let bookingsInSlot = whData.bookings.filter(b => b.date === date && b.time === time && b.status !== 'rejected');
+    
+    let info = '';
+    if (bookingsInSlot.length > 0) {
+      info = `<div class="slot-info"><strong>${bookingsInSlot.length} حجز</strong><br>${bookedCount}/${SLOT_CAPACITY} عربة<br>`;
+      bookingsInSlot.slice(0, 2).forEach(b => {
+        info += `${b.supplier.substring(0, 12)} (${b.truckCount}ع)<br>`;
+      });
+      if (bookingsInSlot.length > 2) info += `+${bookingsInSlot.length-2} آخرين`;
+      info += `</div>`;
+    }
+    
+    let label = {available:'متاح',booked:'محجوز',blocked:'مغلق',full:'ممتلئ',warning:'متبقي 1'}[st];
+    let capacityClass = available > 0 ? (available === 1 ? 'capacity-warning' : '') : 'capacity-full';
+    let capacityText = available > 0 ? (available === 1 ? '⚠️ متبقي: 1 عربة فقط' : `متاح: ${available} عربة`) : 'مكتمل';
+    let clickFn = (st === 'available' || st === 'warning') ? `onclick="toggleBlock('${date}','${time}')"` : '';
+    
+    return `<div class="slot-card ${st === 'warning' ? 'available' : st}" ${clickFn}>
+      <div class="slot-time">${time}</div>
+      <div class="slot-status">${label}</div>
+      <div class="slot-capacity ${capacityClass}">🚛 ${capacityText}</div>
+      ${info}
+    </div>`;
+  }).join('');
+  
+  let badge = document.getElementById('todayBadge');
+  badge.textContent = date === today() ? '● اليوم' : '';
+}
+
+function changeDay(n) {
+  let el = document.getElementById('whDate');
+  let d = new Date(el.value || today());
+  d.setDate(d.getDate() + n);
+  el.value = d.toISOString().split('T')[0];
+  renderWarehouse();
+}
+
+function toggleBlock(date, time) {
+  let whId = currentWarehouse;
+  let k = getSlotKey(date, time);
+  let i = warehouseData[whId].blockedSlots.indexOf(k);
+  let isBlockedNow = false;
+  if(i >= 0) {
+    warehouseData[whId].blockedSlots.splice(i,1);
+    isBlockedNow = false;
+  } else {
+    warehouseData[whId].blockedSlots.push(k);
+    isBlockedNow = true;
+  }
+  saveWarehouseData(whId);
+  // Sync to Sheets
+  upsertBlockedSlotToApi(whId, date, time, isBlockedNow);
+  renderWarehouse();
+}
+
+function cancelBooking(whId, id) {
+  if(confirm('هل أنت متأكد من إلغاء هذا الحجز؟')){ 
+    let b = warehouseData[whId].bookings.find(b=>b.id===id);
+    if(b){
+      b.status = 'cancelled';
+      b.cancelledAt = new Date().toISOString();
+      upsertBookingToApi(whId, b);
+    }
+    saveWarehouseData(whId);
+    renderWarehouse(); 
+    renderBookingsTable(); 
+    showAlert('bookAlert', 'تم إلغاء الحجز', 'success');
+  }
+}
+
+function completeBooking(whId, id) { 
+  let b = warehouseData[whId].bookings.find(b=>b.id===id); 
+  if(b){
+    b.status='completed';
+    upsertBookingToApi(whId, b);
+    saveWarehouseData(whId);
+    renderBookingsTable();
+    renderWarehouse();
+  } 
+}
+
+// ==================== SUPPLIER PAGE ====================
+let currentSupplierData = null;
+let selectedSlot = null;
+
+function renderSupplierSlots() {
+  let date = document.getElementById('supDate').value;
+  let whId = document.getElementById('bookingWarehouseSelect').value;
+  
+  if (!date || !currentSupplierData) return;
+  selectedSlot = null;
+  let btn = document.getElementById('bookBtn');
+  btn.disabled = true;
+  btn.textContent = 'اختر الوقت أولاً ↓';
+  
+  let warningMsg = document.getElementById('capacityWarningMsg');
+  let errorMsg = document.getElementById('capacityErrorMsg');
+  warningMsg.classList.remove('show');
+  errorMsg.classList.remove('show');
+
+  let grid = document.getElementById('supplierSlots');
+  grid.innerHTML = SLOTS_PER_DAY.map(time => {
+    let st = slotStatus(whId, date, time);
+    let bookedCount = getSlotBookedCount(whId, date, time);
+    let available = SLOT_CAPACITY - bookedCount;
+    let taken = (st === 'blocked' || st === 'full');
+    let cap = '';
+    let extraClass = '';
+    
+    if (st === 'full') {
+      cap = '❌ مكتمل';
+      extraClass = 'full';
+    } else if (st === 'blocked') {
+      cap = '🔒 مغلق';
+      extraClass = 'taken';
+      taken = true;
+    } else if (st === 'warning') {
+      cap = `⚠️ متبقي 1 عربة فقط`;
+      extraClass = 'warning';
+    } else {
+      cap = `✅ متاح (${available} عربة)`;
+    }
+    
+    let onclickAttr = (!taken && st !== 'full') ? `onclick="pickSlot(this,'${time}')"` : '';
+    return `<div class="slot-pick ${taken?'taken':''} ${extraClass}" data-time="${time}" ${onclickAttr}>
+      <div class="sp-time">${time}</div>
+      <div class="sp-cap">${cap}</div>
+      <div class="sp-capacity ${extraClass}">🚛 سعة ${SLOT_CAPACITY}</div>
+    </div>`;
+  }).join('');
+}
+
+function pickSlot(el, time) {
+  document.querySelectorAll('.slot-pick').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedSlot = time;
+  let btn = document.getElementById('bookBtn');
+  btn.disabled = false;
+  
+  let date = document.getElementById('supDate').value;
+  let truckCount = parseInt(document.getElementById('supTruckCount').value) || 1;
+  let whId = document.getElementById('bookingWarehouseSelect').value;
+  let available = getSlotAvailableCapacity(whId, date, time);
+  
+  if (truckCount > available) {
+    btn.disabled = true;
+    btn.textContent = `⛔ السعة غير كافية (متاح: ${available} عربة)`;
+  } else if (truckCount === available && available > 0) {
+    btn.textContent = `⚠️ احجز الساعة ${time} (آخر ${available} عربة)`;
+  } else {
+    btn.textContent = `✓ احجز الساعة ${time}`;
+  }
+  
+  checkCapacity();
+}
+
+function submitBooking() {
+  if (!currentSupplierData) { showAlert('bookAlert', 'خطأ في تسجيل الدخول', 'error'); return; }
+  
+  let supplier = document.getElementById('supName').value.trim();
+  let orderNum = document.getElementById('supOrder').value.trim();
+  let goodsType = document.getElementById('supType').value;
+  let plate = document.getElementById('supPlate').value.trim();
+  let driver = document.getElementById('supDriver').value.trim();
+  let truckType = document.getElementById('supTruckType').value;
+  let truckCount = parseInt(document.getElementById('supTruckCount').value);
+  let cartons = parseInt(document.getElementById('supCartons').value);
+  let palletLoading = document.querySelector('input[name="palletLoading"]:checked').value;
+  let qty = '';
+  let notes = document.getElementById('supNotes').value.trim();
+  let date = document.getElementById('supDate').value;
+  let whId = document.getElementById('bookingWarehouseSelect').value;
+
+  // Optional: orderNum, plate, driver
+  if (!goodsType) { showAlert('bookAlert', 'يرجى اختيار نوع البضاعة', 'error'); return; }
+  if (!truckType) { showAlert('bookAlert', 'يرجى اختيار نوع العربية', 'error'); return; }
+  if (truckCount <= 0 || truckCount > 5) { showAlert('bookAlert', 'عدد العربيات يجب أن يكون بين 1 و 5', 'error'); return; }
+  if (cartons <= 0) { showAlert('bookAlert', 'عدد الكراتين يجب أن يكون أكبر من صفر', 'error'); return; }
+  if (!date) { showAlert('bookAlert', 'يرجى اختيار التاريخ', 'error'); return; }
+  if (!selectedSlot) { showAlert('bookAlert', 'يرجى اختيار الوقت', 'error'); return; }
+  
+  let availableCapacity = getSlotAvailableCapacity(whId, date, selectedSlot);
+  if (availableCapacity < truckCount) {
+    showAlert('bookAlert', `❌ لا يمكن حجز ${truckCount} عربيات! السعة المتبقية في هذا الموعد هي ${availableCapacity} عربية فقط.`, 'error');
+    return;
+  }
+  
+  if (isBlocked(whId, date, selectedSlot)) {
+    showAlert('bookAlert', 'هذا الموعد مغلق من قبل إدارة المخزن', 'error');
+    renderSupplierSlots();
+    return;
+  }
+
+  let booking = { 
+    id: genId(), warehouse: whId, supplier, orderNum: orderNum || '', goodsType, plate: plate || '', driver: driver || '', 
+    truckType, truckCount, cartons, palletLoading, 
+    qty, notes, date, time: selectedSlot, 
+    status: 'approved',
+    createdAt: new Date().toISOString() 
+  };
+  warehouseData[whId].bookings.push(booking);
+  saveWarehouseData(whId);
+  // Sync to Sheets
+  upsertBookingToApi(whId, booking);
+
+  let remaining = availableCapacity - truckCount;
+  let message = `✅ تم تأكيد حجزك بنجاح! رقم حجزك: ${booking.id}`;
+  if (remaining === 0) {
+    message += `\n⚠️ تنبيه: هذا الموعد اكتملت سعته بالكامل (${SLOT_CAPACITY}/${SLOT_CAPACITY} عربية).`;
+  } else if (remaining === 1) {
+    message += `\n⚠️ تنبيه: تبقى سعة واحدة فقط في هذا الموعد.`;
+  }
+  showAlert('bookAlert', message, 'success');
+  
+  document.getElementById('supOrder').value = '';
+  document.getElementById('supPlate').value = '';
+  document.getElementById('supDriver').value = '';
+  // qty removed
+  document.getElementById('supNotes').value = '';
+  document.getElementById('supType').value = '';
+  document.getElementById('supTruckType').value = '';
+  document.getElementById('supTruckCount').value = '1';
+  document.getElementById('supCartons').value = '1';
+  document.querySelector('input[name="palletLoading"][value="لا"]').checked = true;
+  
+  selectedSlot = null;
+  renderSupplierSlots();
+  document.getElementById('trackerWrap').style.display = 'block';
+  document.getElementById('trackId').value = booking.id;
+  trackBooking();
+}
+
+function trackBooking() {
+  let id = document.getElementById('trackId').value.trim().toUpperCase();
+  let foundBooking = null;
+  let foundWhId = null;
+  
+  for (let whId in warehouseData) {
+    let b = warehouseData[whId].bookings.find(b => b.id === id);
+    if (b) {
+      foundBooking = b;
+      foundWhId = whId;
+      break;
+    }
+  }
+  
+  let res = document.getElementById('trackResult');
+  if (!foundBooking) { res.innerHTML = '<div class="alert alert-error show">رقم الحجز غير موجود</div>'; return; }
+  
+  let color = {approved:'green',completed:'blue'}[foundBooking.status] || 'green';
+  let label = {approved:'مؤكد',completed:'مكتمل'}[foundBooking.status] || 'مؤكد';
+  let warehouseName = WAREHOUSES[foundWhId]?.name || foundWhId;
+  
+  res.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:14px"><span>${foundBooking.id}</span><span class="badge badge-${color}">${label}</span></div>
+    <div class="info-row"><span class="info-key">المخزن</span><span class="info-val">${warehouseName}</span></div>
+    <div class="info-row"><span class="info-key">المورد</span><span class="info-val">${foundBooking.supplier}</span></div>
+    <div class="info-row"><span class="info-key">الموعد</span><span class="info-val">${formatDate(foundBooking.date)} ${foundBooking.time}</span></div>
+    <div class="info-row"><span class="info-key">نوع العربية</span><span class="info-val">${foundBooking.truckType}</span></div>
+    <div class="info-row"><span class="info-key">عدد العربيات</span><span class="info-val">${foundBooking.truckCount}</span></div>
+    <div class="info-row"><span class="info-key">الكراتين</span><span class="info-val">${foundBooking.cartons}</span></div>
+    <div class="info-row"><span class="info-key">بالتات</span><span class="info-val">${foundBooking.palletLoading}</span></div>`;
+}
+
+// ==================== BOOKINGS TABLE ====================
+function renderBookingsTable() {
+  let statusF = document.getElementById('filterStatus').value;
+  let dateF = document.getElementById('filterDate').value;
+  let search = (document.getElementById('filterSearch').value || '').toLowerCase();
+  let warehouseFilter = document.getElementById('bookingsWarehouseFilter').value;
+  
+  let allBookings = [];
+  for (let whId in warehouseData) {
+    if (!warehouseFilter || warehouseFilter === whId) {
+      allBookings.push(...warehouseData[whId].bookings.map(b => ({ ...b, warehouseId: whId, warehouseName: WAREHOUSES[whId].name })));
+    }
+  }
+  
+  let list = allBookings.sort((a,b) => (b.createdAt||'') > (a.createdAt||'') ? 1 : -1);
+  if (statusF) list = list.filter(b => b.status === statusF);
+  if (dateF) list = list.filter(b => b.date === dateF);
+  if (search) list = list.filter(b => b.supplier.toLowerCase().includes(search) || b.orderNum.toLowerCase().includes(search));
+
+  let tbody = document.getElementById('bookingsTbody');
+  if (!list.length) { tbody.innerHTML = `<tr><td colspan="16"><div class="empty-state"><p>لا توجد حجوزات</p></div>Ndash</td></td>`; return; }
+  let badge = {
+    approved:'<span class="badge badge-green">مؤكد</span>',
+    completed:'<span class="badge badge-blue">مكتمل</span>',
+    cancelled:'<span class="badge badge-gray">تم الإلغاء</span>',
+    rejected:'<span class="badge badge-red">مرفوض</span>',
+    pending:'<span class="badge badge-amber">معلق</span>'
+  };
+  tbody.innerHTML = list.map(b => `<tr>
+    <td><strong>${b.id}</strong></td>
+    <td>${b.warehouseName}</td>
+    <td>${b.supplier}</td>
+    <td>${b.orderNum}</td>
+    <td>${formatDate(b.date)}</td>
+    <td>${b.time}</td>
+    <td>${b.goodsType}</td>
+    <td>${b.truckType||'-'}</td>
+    <td>${b.truckCount||'-'}</td>
+    <td>${b.cartons||'-'}</td>
+    <td>${b.palletLoading||'-'}</td>
+    <td>${b.plate}<br>${b.driver}</td>
+    <td>${b.checkInTime ? new Date(b.checkInTime).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '-'}</td>
+    <td>${b.checkOutTime ? new Date(b.checkOutTime).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '-'}</td>
+    <td>${badge[b.status]}</td>
+    <td><div class="action-btns">
+      <button class="btn-sm btn-details" onclick="openBookingModal('${b.warehouseId}','${b.id}')">تفاصيل</button>
+      <button class="btn-sm btn-details" onclick="checkInBooking('${b.warehouseId}','${b.id}')">دخول</button>
+      <button class="btn-sm btn-details" onclick="checkOutBooking('${b.warehouseId}','${b.id}')">خروج</button>
+      <button class="btn-sm btn-complete" onclick="completeBooking('${b.warehouseId}','${b.id}')">مكتمل</button>
+      <button class="btn-sm btn-cancel" onclick="cancelBooking('${b.warehouseId}','${b.id}')">إلغاء</button>
+    </div>Ndash
+  <tr>`).join('');
+}
+
+function checkInBooking(whId, id) {
+  let b = warehouseData[whId]?.bookings?.find(x => x.id === id);
+  if (!b) return;
+  // Only set if not set yet
+  if (!b.checkInTime) b.checkInTime = new Date().toISOString();
+  upsertBookingToApi(whId, b);
+  saveWarehouseData(whId);
+  renderBookingsTable();
+  renderWarehouse();
+}
+
+function checkOutBooking(whId, id) {
+  let b = warehouseData[whId]?.bookings?.find(x => x.id === id);
+  if (!b) return;
+  if (!b.checkInTime) {
+    if (!confirm('لم يتم تسجيل وقت الدخول. هل تريد تسجيل الخروج الآن؟')) return;
+  }
+  if (!b.checkOutTime) b.checkOutTime = new Date().toISOString();
+  upsertBookingToApi(whId, b);
+  saveWarehouseData(whId);
+  renderBookingsTable();
+  renderWarehouse();
+}
+
+// ==================== MODAL ====================
+function openBookingModal(whId, id) {
+  let b = warehouseData[whId].bookings.find(b => b.id === id);
+  if (!b) return;
+  let label = {approved:'مؤكد',completed:'مكتمل',cancelled:'تم الإلغاء',rejected:'مرفوض',pending:'معلق'}[b.status] || 'مؤكد';
+  document.getElementById('modalTitle').textContent = 'تفاصيل الحجز · '+b.id;
+  document.getElementById('modalBody').innerHTML = `
+    <div class="info-row"><span class="info-key">المخزن</span><span class="info-val">${WAREHOUSES[whId].name}</span></div>
+    <div class="info-row"><span class="info-key">المورد</span><span class="info-val">${b.supplier}</span></div>
+    <div class="info-row"><span class="info-key">رقم الأوردر</span><span class="info-val">${b.orderNum}</span></div>
+    <div class="info-row"><span class="info-key">التاريخ والوقت</span><span class="info-val">${formatDate(b.date)} ${b.time}</span></div>
+    <div class="info-row"><span class="info-key">نوع البضاعة</span><span class="info-val">${b.goodsType}</span></div>
+    <div class="info-row"><span class="info-key">نوع العربية</span><span class="info-val">${b.truckType||'-'}</span></div>
+    <div class="info-row"><span class="info-key">عدد العربيات</span><span class="info-val">${b.truckCount||'-'}</span></div>
+    <div class="info-row"><span class="info-key">الكراتين</span><span class="info-val">${b.cartons||'-'}</span></div>
+    <div class="info-row"><span class="info-key">بالتات</span><span class="info-val">${b.palletLoading||'-'}</span></div>
+    <div class="info-row"><span class="info-key">السيارة/السائق</span><span class="info-val">${b.plate} / ${b.driver}</span></div>
+    <div class="info-row"><span class="info-key">الحالة</span><span class="info-val">${label}</span></div>
+    ${b.notes?`<div class="info-row"><span class="info-key">ملاحظات</span><span class="info-val">${b.notes}</span></div>`:''}`;
+  document.getElementById('modalActions').innerHTML = `<button class="btn-primary" onclick="closeModal()">إغلاق</button>`;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+
+// ==================== REPORTS (deprecated block removed) ====================
+
+// ==================== SIGNUP ====================
+function showSignupModal() {
+  let m = document.getElementById('signupModal');
+  if (!m) return;
+  m.classList.add('open');
+}
+function closeSignupModal() {
+  try {
+    let m = document.getElementById('signupModal');
+    if (!m) return;
+    m.classList.remove('open');
+  } catch (e) {
+    console.error(e);
+  }
+}
+function doSignup() {
+  let company = document.getElementById('signupCompany').value.trim();
+  let warehouse = document.getElementById('signupWarehouse').value;
+  let username = document.getElementById('signupUsername').value.trim();
+  let email = (document.getElementById('signupEmail')?.value || '').trim().toLowerCase();
+  let password = document.getElementById('signupPassword').value;
+  let confirm = document.getElementById('signupConfirmPassword').value;
+  if (!company) { alert('يرجى إدخال اسم الشركة'); return; }
+  if (!username) { alert('يرجى إدخال اسم المستخدم'); return; }
+  if (!email) { alert('يرجى إدخال البريد الإلكتروني'); return; }
+  if (!/^\S+@\S+\.\S+$/.test(email)) { alert('يرجى إدخال بريد إلكتروني صحيح'); return; }
+  if (!password) { alert('يرجى إدخال كلمة المرور'); return; }
+  if (password !== confirm) { alert('كلمة المرور غير متطابقة'); return; }
+  if (suppliers.find(s => s.username === username)) { alert('اسم المستخدم موجود بالفعل'); return; }
+  if (suppliers.find(s => (s.email||'').toLowerCase() === email)) { alert('البريد الإلكتروني مستخدم بالفعل'); return; }
+  suppliers.push({ username, email, password, company, defaultWarehouse: warehouse, createdAt: new Date().toISOString() });
+  localStorage.setItem('suppliers', JSON.stringify(suppliers));
+  alert('✅ تم إنشاء الحساب بنجاح!');
+  closeSignupModal();
+  document.getElementById('loginUser').value = username;
+  document.getElementById('loginPass').value = password;
+  document.getElementById('roleChipSupplier').click();
+}
+
+// ==================== FORGOT PASSWORD ====================
+function openForgotModal() {
+  document.getElementById('forgotModal')?.classList.add('open');
+  document.getElementById('forgotUsername').value = document.getElementById('loginUser').value || '';
+}
+
+function doResetPassword() {
+  let username = (document.getElementById('forgotUsername').value || '').trim();
+  let email = (document.getElementById('forgotEmail').value || '').trim().toLowerCase();
+  let newPass = document.getElementById('forgotNewPassword').value;
+  let confirm = document.getElementById('forgotConfirmPassword').value;
+  if (!username) { alert('يرجى إدخال اسم المستخدم'); return; }
+  if (!email) { alert('يرجى إدخال البريد الإلكتروني'); return; }
+  if (!/^\S+@\S+\.\S+$/.test(email)) { alert('يرجى إدخال بريد إلكتروني صحيح'); return; }
+  if (!newPass) { alert('يرجى إدخال كلمة مرور جديدة'); return; }
+  if (newPass !== confirm) { alert('كلمة المرور غير متطابقة'); return; }
+  let idx = suppliers.findIndex(s => s.username === username && (s.email||'').toLowerCase() === email);
+  if (idx === -1) { alert('لم يتم العثور على حساب مطابق'); return; }
+  suppliers[idx].password = newPass;
+  suppliers[idx].updatedAt = new Date().toISOString();
+  localStorage.setItem('suppliers', JSON.stringify(suppliers));
+  alert('✅ تم تحديث كلمة المرور');
+  document.getElementById('forgotModal')?.classList.remove('open');
+  document.getElementById('loginUser').value = username;
+  document.getElementById('loginPass').value = newPass;
+  document.getElementById('roleChipSupplier').click();
+}
+
+// ==================== LOGIN ====================
+// Warehouse users are stored in localStorage so admin can edit them in-app.
+const WAREHOUSE_USERS_STORAGE_KEY = 'warehouseUsers';
+
+function defaultWarehouseUsers() {
+  return [
+    { username: 'admin', password: 'admin123', label: 'الادمن', access: 'all' },
+    { username: 'wh1', password: 'wh1@123', label: 'مسؤول المخزن الأول', access: 'single', warehouseId: 'warehouse1' },
+    { username: 'wh2', password: 'wh2@123', label: 'مسؤول المخزن الثاني', access: 'single', warehouseId: 'warehouse2' },
+    { username: 'wh3', password: 'wh3@123', label: 'مسؤول المخزن الثالث', access: 'single', warehouseId: 'warehouse3' },
+    { username: 'wh4', password: 'wh4@123', label: 'مسؤول المخزن الرابع', access: 'single', warehouseId: 'warehouse4' },
+  ];
+}
+
+function loadWarehouseUsers() {
+  try {
+    let raw = localStorage.getItem(WAREHOUSE_USERS_STORAGE_KEY);
+    if (!raw) {
+      let def = defaultWarehouseUsers();
+      localStorage.setItem(WAREHOUSE_USERS_STORAGE_KEY, JSON.stringify(def));
+      return def;
+    }
+    let parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      let def = defaultWarehouseUsers();
+      localStorage.setItem(WAREHOUSE_USERS_STORAGE_KEY, JSON.stringify(def));
+      return def;
+    }
+    return parsed;
+  } catch (e) {
+    let def = defaultWarehouseUsers();
+    localStorage.setItem(WAREHOUSE_USERS_STORAGE_KEY, JSON.stringify(def));
+    return def;
+  }
+}
+
+function saveWarehouseUsers(users) {
+  localStorage.setItem(WAREHOUSE_USERS_STORAGE_KEY, JSON.stringify(users || []));
+}
+
+function resetWarehouseUsersToDefault() {
+  if (!confirm('هل تريد إعادة ضبط مستخدمي المخازن؟')) return;
+  saveWarehouseUsers(defaultWarehouseUsers());
+  renderUsersModal();
+}
+
+function renderUsersModal() {
+  let users = loadWarehouseUsers();
+  let tbody = document.getElementById('usersTbody');
+  if (!tbody) return;
+  let whOptions = Object.keys(WAREHOUSES).map(k=>`<option value="${k}">${WAREHOUSES[k].name}</option>`).join('');
+  tbody.innerHTML = users.map((u, idx) => {
+    let isAdmin = u.access === 'all';
+    return `<tr>
+      <td><input class="date-input" style="width:140px" type="text" value="${u.username || ''}" data-user-idx="${idx}" data-field="username" ${isAdmin?'disabled':''}></td>
+      <td><input class="date-input" style="width:140px" type="text" value="${u.password || ''}" data-user-idx="${idx}" data-field="password"></td>
+      <td>
+        <select class="date-input" style="width:140px" data-user-idx="${idx}" data-field="access" ${isAdmin?'disabled':''}>
+          <option value="all">كل المخازن</option>
+          <option value="single">مخزن واحد</option>
+        </select>
+      </td>
+      <td>
+        <select class="date-input" style="width:160px" data-user-idx="${idx}" data-field="warehouseId" ${isAdmin?'disabled':''}>
+          ${whOptions}
+        </select>
+      </td>
+      <td><button class="btn-sm btn-cancel" type="button" onclick="deleteWarehouseUserRow(${idx})" ${isAdmin?'disabled':''}>حذف</button></td>
+    </tr>`;
+  }).join('');
+
+  // Set selected options after render
+  users.forEach((u, idx) => {
+    let selAccess = tbody.querySelector(`select[data-user-idx="${idx}"][data-field="access"]`);
+    if (selAccess) selAccess.value = u.access || 'single';
+    let selWh = tbody.querySelector(`select[data-user-idx="${idx}"][data-field="warehouseId"]`);
+    if (selWh) selWh.value = u.warehouseId || 'warehouse1';
+  });
+}
+
+function addWarehouseUserRow() {
+  let users = loadWarehouseUsers();
+  users.push({ username: '', password: '', label: 'مستخدم مخزن', access: 'single', warehouseId: 'warehouse1' });
+  saveWarehouseUsers(users);
+  renderUsersModal();
+}
+
+function deleteWarehouseUserRow(idx) {
+  let users = loadWarehouseUsers();
+  let u = users[idx];
+  if (!u) return;
+  if (u.access === 'all') { alert('لا يمكن حذف حساب الادمن'); return; }
+  if (!confirm('هل تريد حذف هذا المستخدم؟')) return;
+  users.splice(idx, 1);
+  saveWarehouseUsers(users);
+  renderUsersModal();
+}
+
+// ==================== SUPPLIER USERS (Admin) ====================
+function resetSupplierUsersToDefault() {
+  if (!confirm('هل تريد إعادة ضبط مستخدمي الموردين؟')) return;
+  saveSupplierUsers(defaultSupplierUsers());
+  suppliers = loadSupplierUsers();
+  renderSupplierUsersModal();
+}
+
+function renderSupplierUsersModal() {
+  let list = loadSupplierUsers();
+  let tbody = document.getElementById('supplierUsersTbody');
+  if (!tbody) return;
+  let whOptions = Object.keys(WAREHOUSES).map(k=>`<option value="${k}">${WAREHOUSES[k].name}</option>`).join('');
+  tbody.innerHTML = list.map((u, idx) => {
+    return `<tr>
+      <td><input class="date-input" style="width:120px" type="text" value="${u.username || ''}" data-sup-idx="${idx}" data-field="username"></td>
+      <td><input class="date-input" style="width:160px" type="email" value="${u.email || ''}" data-sup-idx="${idx}" data-field="email"></td>
+      <td><input class="date-input" style="width:120px" type="text" value="${u.password || ''}" data-sup-idx="${idx}" data-field="password"></td>
+      <td><input class="date-input" style="width:160px" type="text" value="${u.company || ''}" data-sup-idx="${idx}" data-field="company"></td>
+      <td>
+        <select class="date-input" style="width:160px" data-sup-idx="${idx}" data-field="defaultWarehouse">
+          ${whOptions}
+        </select>
+      </td>
+      <td><button class="btn-sm btn-cancel" type="button" onclick="deleteSupplierUserRow(${idx})">حذف</button></td>
+    </tr>`;
+  }).join('');
+
+  // Set selected options after render
+  list.forEach((u, idx) => {
+    let sel = tbody.querySelector(`select[data-sup-idx="${idx}"][data-field="defaultWarehouse"]`);
+    if (sel) sel.value = u.defaultWarehouse || 'warehouse1';
+  });
+}
+
+function openSupplierUsersModal() {
+  renderSupplierUsersModal();
+  document.getElementById('supplierUsersModal')?.classList.add('open');
+}
+
+function addSupplierUserRow() {
+  let list = loadSupplierUsers();
+  list.push({ username: '', email: '', password: '', company: '', defaultWarehouse: 'warehouse1', createdAt: new Date().toISOString() });
+  saveSupplierUsers(list);
+  suppliers = loadSupplierUsers();
+  renderSupplierUsersModal();
+}
+
+function deleteSupplierUserRow(idx) {
+  let list = loadSupplierUsers();
+  if (!list[idx]) return;
+  if (list.length === 1) { alert('لا يمكن حذف آخر مستخدم للموردين'); return; }
+  if (!confirm('هل تريد حذف هذا المستخدم؟')) return;
+  list.splice(idx, 1);
+  saveSupplierUsers(list);
+  suppliers = loadSupplierUsers();
+  renderSupplierUsersModal();
+}
+
+function saveSupplierUsersFromModal() {
+  let list = loadSupplierUsers();
+  let inputs = Array.from(document.querySelectorAll('#supplierUsersTbody [data-sup-idx]'));
+  inputs.forEach(inp => {
+    let idx = parseInt(inp.getAttribute('data-sup-idx'));
+    let field = inp.getAttribute('data-field');
+    if (Number.isFinite(idx) && list[idx]) {
+      list[idx][field] = (inp.value || '').trim();
+    }
+  });
+  // Validation
+  if (list.some(u => !u.username || !u.password || !u.email)) { alert('⚠️ اسم المستخدم والبريد وكلمة المرور مطلوبة'); return; }
+  if (list.some(u => !/^\S+@\S+\.\S+$/.test((u.email||'').trim()))) { alert('⚠️ يوجد بريد إلكتروني غير صحيح'); return; }
+  let usernames = list.map(u => (u.username||'').trim());
+  if (new Set(usernames).size !== usernames.length) { alert('⚠️ أسماء مستخدمي الموردين مكررة'); return; }
+  let emails = list.map(u => (u.email||'').trim().toLowerCase());
+  if (new Set(emails).size !== emails.length) { alert('⚠️ بريد مستخدمي الموردين مكرر'); return; }
+  saveSupplierUsers(list);
+  suppliers = loadSupplierUsers();
+  alert('✅ تم حفظ مستخدمي الموردين');
+  document.getElementById('supplierUsersModal')?.classList.remove('open');
+}
+
+function openUsersModal() {
+  renderUsersModal();
+  document.getElementById('usersModal')?.classList.add('open');
+}
+
+function saveUsersFromModal() {
+  let users = loadWarehouseUsers();
+  let inputs = Array.from(document.querySelectorAll('#usersTbody [data-user-idx]'));
+  inputs.forEach(inp => {
+    let idx = parseInt(inp.getAttribute('data-user-idx'));
+    let field = inp.getAttribute('data-field');
+    if (Number.isFinite(idx) && users[idx]) {
+      users[idx][field] = (inp.value || '').trim();
+    }
+  });
+
+  // Normalize / enforce rules
+  users = users.map(u => {
+    let access = (u.access === 'all') ? 'all' : 'single';
+    let out = { ...u, access };
+    if (access === 'all') {
+      delete out.warehouseId;
+    } else {
+      out.warehouseId = out.warehouseId || 'warehouse1';
+    }
+    return out;
+  });
+
+  // Basic validation: unique usernames, non-empty
+  let names = users.map(u => (u.username || '').trim()).filter(Boolean);
+  let unique = new Set(names);
+  if (names.length !== unique.size) { alert('⚠️ أسماء المستخدمين يجب أن تكون غير مكررة'); return; }
+  if (users.some(u => !u.username || !u.password)) { alert('⚠️ اسم المستخدم وكلمة المرور مطلوبة لكل حساب'); return; }
+  // Ensure admin exists
+  if (!users.some(u => u.access === 'all')) { alert('⚠️ لازم يوجد حساب واحد على الأقل بصلاحية الادمن'); return; }
+
+  // Ensure single-access users have valid warehouseId
+  for (let u of users) {
+    if (u.access === 'single' && (!u.warehouseId || !WAREHOUSES[u.warehouseId])) {
+      alert('⚠️ يرجى اختيار مخزن صحيح لكل مستخدم');
+      return;
+    }
+  }
+
+  saveWarehouseUsers(users);
+  alert('✅ تم حفظ المستخدمين');
+  document.getElementById('usersModal')?.classList.remove('open');
+}
+
+let currentWarehouseAccess = 'all'; // 'all' | 'single'
+
+let selectedLoginRole = 'warehouse';
+
+function selectRole(role) {
+  selectedLoginRole = role;
+  document.getElementById('roleChipWarehouse').classList.toggle('selected', role === 'warehouse');
+  document.getElementById('roleChipSupplier').classList.toggle('selected', role === 'supplier');
+}
+
+function doLogin() {
+  let user = document.getElementById('loginUser').value.trim();
+  let pass = document.getElementById('loginPass').value;
+  let err = document.getElementById('loginError');
+  
+  if (selectedLoginRole === 'warehouse') {
+    let match = loadWarehouseUsers().find(u => u.username === user && u.password === pass);
+    if (!match) { err.classList.add('show'); return; }
+    err.classList.remove('show');
+    currentRole = 'warehouse';
+    currentWarehouseAccess = match.access || 'all';
+    document.getElementById('topbarNav').innerHTML = `
+      <button class="tab-btn active" onclick="switchPage('warehouse')">🏭 المخازن</button>
+      <button class="tab-btn" onclick="switchPage('bookings')">📋 الحجوزات</button>
+      <button class="tab-btn" onclick="switchPage('reports')">📊 التقارير</button>
+      ${currentWarehouseAccess !== 'single' ? '<button class="tab-btn" onclick="openUsersModal()">👤 مستخدمي المخازن</button>' : ''}
+      ${currentWarehouseAccess !== 'single' ? '<button class="tab-btn" onclick="openSupplierUsersModal()">🚚 مستخدمي الموردين</button>' : ''}
+    `;
+    document.getElementById('userPillLabel').textContent = match.label;
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('topbar').style.display = 'flex';
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-warehouse').classList.add('active');
+    document.getElementById('whDate').value = today();
+    // Restrict warehouse selection for non-admin users
+    if (currentWarehouseAccess === 'single' && match.warehouseId) {
+      currentWarehouse = match.warehouseId;
+      let sel = document.getElementById('selectedWarehouse');
+      if (sel) {
+        sel.value = match.warehouseId;
+        sel.disabled = true;
+        sel.style.opacity = 0.7;
+        sel.style.cursor = 'not-allowed';
+      }
+      // Also lock other warehouse filters to the same warehouse
+      let bSel = document.getElementById('bookingsWarehouseFilter');
+      if (bSel) {
+        bSel.value = match.warehouseId;
+        bSel.disabled = true;
+        bSel.style.opacity = 0.7;
+        bSel.style.cursor = 'not-allowed';
+      }
+      let rSel = document.getElementById('reportsWarehouseFilter');
+      if (rSel) {
+        rSel.value = match.warehouseId;
+        rSel.disabled = true;
+        rSel.style.opacity = 0.7;
+        rSel.style.cursor = 'not-allowed';
+      }
+    } else {
+      // Admin: allow selecting any warehouse
+      let sel = document.getElementById('selectedWarehouse');
+      if (sel) { sel.disabled = false; sel.style.opacity = 1; sel.style.cursor = 'pointer'; }
+      let bSel = document.getElementById('bookingsWarehouseFilter');
+      if (bSel) { bSel.disabled = false; bSel.value = ''; bSel.style.opacity = 1; bSel.style.cursor = 'pointer'; }
+      let rSel = document.getElementById('reportsWarehouseFilter');
+      if (rSel) { rSel.disabled = false; rSel.value = ''; rSel.style.opacity = 1; rSel.style.cursor = 'pointer'; }
+    }
+    renderWarehouse();
+  } else if (selectedLoginRole === 'supplier') {
+    let match = suppliers.find(u => u.username === user && u.password === pass);
+    if (!match) { err.classList.add('show'); return; }
+    err.classList.remove('show');
+    currentRole = 'supplier';
+    currentSupplierData = match;
+    document.getElementById('topbarNav').innerHTML = `<button class="tab-btn active" onclick="switchPage('supplier')">🚚 بوابة المورد</button>`;
+    document.getElementById('userPillLabel').textContent = match.company;
+    document.getElementById('supName').value = match.company;
+    // تعيين المخزن الافتراضي في خانة الاختيار
+    if (match.defaultWarehouse) {
+      document.getElementById('bookingWarehouseSelect').value = match.defaultWarehouse;
+    }
+    document.getElementById('supDate').value = today();
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('topbar').style.display = 'flex';
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-supplier').classList.add('active');
+    renderSupplierSlots();
+  }
+}
+
+function switchPage(pageId) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  if (event && event.currentTarget) event.currentTarget.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + pageId).classList.add('active');
+  if (pageId === 'warehouse') renderWarehouse();
+  if (pageId === 'bookings') renderBookingsTable();
+  if (pageId === 'reports') { initReportsDefaults(); refreshReportsDashboard(); }
+  if (pageId === 'supplier') renderSupplierSlots();
+}
+
+function doLogout() {
+  currentRole = null;
+  currentSupplierData = null;
+  selectedSlot = null;
+  currentWarehouseAccess = 'all';
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginPass').value = '';
+  document.getElementById('topbar').style.display = 'none';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+// ==================== EVENT LISTENERS ====================
+document.getElementById('loginBtn').onclick = doLogin;
+// Login on Enter key
+document.getElementById('loginUser').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('loginPass').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('logoutBtn').onclick = doLogout;
+document.getElementById('roleChipWarehouse').onclick = () => selectRole('warehouse');
+document.getElementById('roleChipSupplier').onclick = () => selectRole('supplier');
+document.getElementById('prevDayBtn').onclick = () => changeDay(-1);
+document.getElementById('nextDayBtn').onclick = () => changeDay(1);
+document.getElementById('bookBtn').onclick = submitBooking;
+document.getElementById('trackBtn').onclick = trackBooking;
+document.getElementById('showTrackerBtn').onclick = () => document.getElementById('trackerWrap').style.display = 'block';
+document.getElementById('closeModalBtn').onclick = closeModal;
+document.getElementById('modalOverlay').onclick = closeModal;
+document.getElementById('filterStatus').onchange = renderBookingsTable;
+document.getElementById('filterDate').onchange = renderBookingsTable;
+document.getElementById('filterSearch').oninput = renderBookingsTable;
+document.getElementById('supDate').onchange = () => { renderSupplierSlots(); checkCapacity(); };
+document.getElementById('supTruckCount').oninput = checkCapacity;
+document.getElementById('bookingWarehouseSelect').onchange = () => { renderSupplierSlots(); checkCapacity(); };
+document.getElementById('exportAllBtn').onclick = exportAllSheets;
+// Old report buttons were removed from UI; keep functions for backward-compat but don't bind.
+// Supplier signup is disabled
+document.getElementById('closeSignupBtn').onclick = closeSignupModal;
+// document.getElementById('doSignupBtn').onclick = doSignup;
+document.getElementById('selectedWarehouse').onchange = (e) => { currentWarehouse = e.target.value; renderWarehouse(); };
+document.getElementById('bookingsWarehouseFilter').onchange = renderBookingsTable;
+document.getElementById('reportsWarehouseFilter').onchange = () => { refreshReportsDashboard(); };
+
+// Reports dashboard listeners
+document.getElementById('rDailyDate').onchange = refreshReportsDashboard;
+document.getElementById('rBookingsFrom').onchange = refreshReportsDashboard;
+document.getElementById('rBookingsTo').onchange = refreshReportsDashboard;
+document.getElementById('rBookingsStatus').onchange = refreshReportsDashboard;
+document.getElementById('rUtilFrom').onchange = refreshReportsDashboard;
+document.getElementById('rUtilTo').onchange = refreshReportsDashboard;
+document.getElementById('rSupFrom').onchange = refreshReportsDashboard;
+document.getElementById('rSupTo').onchange = refreshReportsDashboard;
+document.getElementById('rBlockedFrom').onchange = refreshReportsDashboard;
+document.getElementById('rBlockedTo').onchange = refreshReportsDashboard;
+
+document.getElementById('exportDailyBtn').onclick = exportDailySchedule;
+document.getElementById('exportBookingsBtn').onclick = exportBookingsReport;
+document.getElementById('exportUtilBtn').onclick = exportSlotsUtilization;
+document.getElementById('exportSupBtn').onclick = exportSupplierSummary;
+document.getElementById('exportBlockedBtn').onclick = exportBlockedSlots;
+
+// Warehouse users management (admin)
+document.getElementById('saveUsersBtn').onclick = saveUsersFromModal;
+document.getElementById('saveSupplierUsersBtn').onclick = saveSupplierUsersFromModal;
+
+// Forgot password
+document.getElementById('forgotPassBtn').onclick = openForgotModal;
+document.getElementById('doResetBtn').onclick = doResetPassword;
+
+// ==================== REPORTS ====================
+function initReportsDefaults() {
+  // set default dates once
+  if (!document.getElementById('rDailyDate').value) document.getElementById('rDailyDate').value = today();
+  if (!document.getElementById('rBookingsFrom').value) document.getElementById('rBookingsFrom').value = today();
+  if (!document.getElementById('rBookingsTo').value) document.getElementById('rBookingsTo').value = today();
+  if (!document.getElementById('rUtilFrom').value) document.getElementById('rUtilFrom').value = today();
+  if (!document.getElementById('rUtilTo').value) document.getElementById('rUtilTo').value = today();
+  if (!document.getElementById('rSupFrom').value) document.getElementById('rSupFrom').value = today();
+  if (!document.getElementById('rSupTo').value) document.getElementById('rSupTo').value = today();
+  if (!document.getElementById('rBlockedFrom').value) document.getElementById('rBlockedFrom').value = today();
+  if (!document.getElementById('rBlockedTo').value) document.getElementById('rBlockedTo').value = today();
+}
+
+function refreshReportsDashboard() {
+  try {
+    // Ensure warehouseData is initialized
+    if (!warehouseData || Object.keys(warehouseData).length === 0) {
+      initWarehouseData();
+    }
+    renderDailyScheduleCard();
+    renderBookingsCard();
+    renderUtilizationCard();
+    renderSupplierSummaryCard();
+    renderBlockedSlotsCard();
+  } catch (e) {
+    console.error(e);
+    alert('حدث خطأ أثناء تحميل التقارير. افتح Console لمعرفة التفاصيل.');
+  }
+}
+
+function getReportsWarehouseFilter() {
+  return document.getElementById('reportsWarehouseFilter').value;
+}
+
+function inRange(dateStr, fromStr, toStr) {
+  if (fromStr && dateStr < fromStr) return false;
+  if (toStr && dateStr > toStr) return false;
+  return true;
+}
+
+function filterBookingsByRange(list, fromStr, toStr, status) {
+  return list.filter(b => {
+    if (fromStr && b.date < fromStr) return false;
+    if (toStr && b.date > toStr) return false;
+    if (status && b.status !== status) return false;
+    return true;
+  });
+}
+
+function setText(id, val) {
+  let el = document.getElementById(id);
+  if (el) el.textContent = String(val);
+}
+
+function renderDailyScheduleCard() {
+  let whFilter = getReportsWarehouseFilter();
+  let date = document.getElementById('rDailyDate').value;
+  if (!date) return;
+  let whIds = whFilter ? [whFilter] : Object.keys(WAREHOUSES);
+
+  let rows = [];
+  let kBlocked = 0, kAvailable = 0, kWaiting = 0, kBooked = 0;
+  whIds.forEach(whId => {
+    SLOTS_PER_DAY.forEach(time => {
+      let blocked = isBlocked(whId, date, time);
+      if (blocked) { kBlocked++; rows.push({ time, status: 'مغلق', supplier: '', orderNum: '', vehicle: '', whId }); return; }
+      // find bookings for this slot
+      let slotBookings = (warehouseData[whId]?.bookings || []).filter(b => b.date === date && b.time === time && b.status !== 'rejected');
+      if (slotBookings.length) {
+        kBooked++;
+        let b = slotBookings[0];
+        rows.push({ time, status: statusLabel(b.status), supplier: b.supplier||'', orderNum: b.orderNum||'', vehicle: (b.plate||'') + (b.driver?(' / '+b.driver):''), whId });
+      } else {
+        kAvailable++;
+        rows.push({ time, status: 'متاح', supplier: '', orderNum: '', vehicle: '', whId });
+      }
+    });
+  });
+
+  setText('rDailyKpiBlocked', kBlocked);
+  setText('rDailyKpiAvailable', kAvailable);
+  setText('rDailyKpiWaiting', kWaiting);
+  setText('rDailyKpiBooked', kBooked);
+
+  let html = '';
+  rows.slice(0, 60).forEach(r => {
+    html += `<tr><td>${r.time}</td><td>${r.status}</td><td>${r.supplier}</td><td>${r.orderNum}</td><td>${r.vehicle}</td></tr>`;
+  });
+  document.getElementById('rDailyPreview').innerHTML = html || `<tr><td colspan="5" style="color:#999">لا يوجد بيانات</td></tr>`;
+}
+
+function renderBookingsCard() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rBookingsFrom').value;
+  let toStr = document.getElementById('rBookingsTo').value;
+  let status = document.getElementById('rBookingsStatus').value;
+
+  let list = getAllBookings(whFilter);
+  list = filterBookingsByRange(list, fromStr, toStr, status);
+
+  let kTotal = list.length;
+  let kApproved = list.filter(b=>b.status==='approved').length;
+  let kCompleted = list.filter(b=>b.status==='completed').length;
+  let kRejected = list.filter(b=>b.status==='rejected').length;
+  setText('rBookingsKpiTotal', kTotal);
+  setText('rBookingsKpiApproved', kApproved);
+  setText('rBookingsKpiCompleted', kCompleted);
+  setText('rBookingsKpiRejected', kRejected);
+
+  let html = '';
+  list.slice(0, 30).forEach(b => {
+    html += `<tr><td>${b.id}</td><td>${formatDate(b.date)}</td><td>${b.time||''}</td><td>${b.supplier||''}</td><td>${statusLabel(b.status)}</td></tr>`;
+  });
+  document.getElementById('rBookingsPreview').innerHTML = html || `<tr><td colspan="5" style="color:#999">لا يوجد بيانات</td></tr>`;
+}
+
+function renderUtilizationCard() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rUtilFrom').value;
+  let toStr = document.getElementById('rUtilTo').value;
+  if (!fromStr || !toStr) return;
+  if (fromStr > toStr) { let t = fromStr; fromStr = toStr; toStr = t; }
+
+  // build list of dates
+  let dates = [];
+  let d = new Date(fromStr);
+  let end = new Date(toStr);
+  while (d <= end) {
+    let ds = d.toISOString().split('T')[0];
+    dates.push(ds);
+    d.setDate(d.getDate()+1);
+  }
+
+  let whIds = whFilter ? [whFilter] : Object.keys(WAREHOUSES);
+  let html = '';
+  let rows = [];
+  dates.forEach(date => {
+    let booked = 0, blocked = 0;
+    let totalSlots = SLOTS_PER_DAY.length * whIds.length;
+    whIds.forEach(whId => {
+      SLOTS_PER_DAY.forEach(time => {
+        if (isBlocked(whId, date, time)) { blocked++; return; }
+        let slotBookings = (warehouseData[whId]?.bookings || []).filter(b => b.date === date && b.time === time && b.status !== 'rejected');
+        if (slotBookings.length) booked++;
+      });
+    });
+    let available = totalSlots - blocked - booked;
+    let util = totalSlots ? Math.round((booked / (totalSlots - blocked || totalSlots)) * 100) : 0;
+    rows.push([formatDate(date), booked, 0, blocked, available, util+'%']);
+  });
+
+  rows.slice(0, 30).forEach(r => {
+    html += `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`;
+  });
+  document.getElementById('rUtilPreview').innerHTML = html || `<tr><td colspan="6" style="color:#999">لا يوجد بيانات</td></tr>`;
+}
+
+function renderSupplierSummaryCard() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rSupFrom').value;
+  let toStr = document.getElementById('rSupTo').value;
+  let list = getAllBookings(whFilter);
+  list = filterBookingsByRange(list, fromStr, toStr, '');
+  let map = {};
+  list.forEach(b=>{
+    let key = (b.supplier||'').trim() || '—';
+    if (!map[key]) map[key] = { supplier: key, total: 0, approved: 0, completed: 0, rejected: 0 };
+    map[key].total += 1;
+    if (b.status === 'approved') map[key].approved += 1;
+    if (b.status === 'completed') map[key].completed += 1;
+    if (b.status === 'rejected') map[key].rejected += 1;
+  });
+  let rows = Object.values(map).sort((a,b)=>b.total-a.total);
+  let html = '';
+  rows.slice(0, 30).forEach(s => {
+    html += `<tr><td>${s.supplier}</td><td>${s.total}</td><td>${s.approved}</td><td>${s.completed}</td><td>${s.rejected}</td></tr>`;
+  });
+  document.getElementById('rSupPreview').innerHTML = html || `<tr><td colspan="5" style="color:#999">لا يوجد بيانات</td></tr>`;
+}
+
+function renderBlockedSlotsCard() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rBlockedFrom').value;
+  let toStr = document.getElementById('rBlockedTo').value;
+  let list = getAllBlockedSlots(whFilter);
+  list = list.filter(x => {
+    if (fromStr && x.date < fromStr) return false;
+    if (toStr && x.date > toStr) return false;
+    return true;
+  });
+  let html = '';
+  list.slice(0, 30).forEach(x => {
+    html += `<tr><td>${x.warehouseName}</td><td>${formatDate(x.date)}</td><td>${x.time}</td></tr>`;
+  });
+  document.getElementById('rBlockedPreview').innerHTML = html || `<tr><td colspan="3" style="color:#999">لا يوجد بيانات</td></tr>`;
+}
+
+function exportDailySchedule() {
+  let whFilter = getReportsWarehouseFilter();
+  let date = document.getElementById('rDailyDate').value;
+  let whIds = whFilter ? [whFilter] : Object.keys(WAREHOUSES);
+  let rows = [["المخزن","التاريخ","الوقت","الحالة","المورد","رقم الأوردر","السيارة/السائق"]];
+  whIds.forEach(whId=>{
+    let whName = WAREHOUSES[whId].name;
+    SLOTS_PER_DAY.forEach(time=>{
+      if (isBlocked(whId, date, time)) {
+        rows.push([whName, formatDate(date), time, 'مغلق', '', '', '']);
+        return;
+      }
+      let slotBookings = (warehouseData[whId]?.bookings || []).filter(b => b.date === date && b.time === time);
+      if (slotBookings.length) {
+        let b = slotBookings[0];
+        rows.push([whName, formatDate(date), time, statusLabel(b.status), b.supplier||'', b.orderNum||'', (b.plate||'') + (b.driver?(' / '+b.driver):'')]);
+      } else {
+        rows.push([whName, formatDate(date), time, 'متاح', '', '', '']);
+      }
+    })
+  });
+  downloadExcel([{name:'جدول يوم', data: rows}], 'جدول_يوم.xlsx');
+}
+
+function exportBookingsReport() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rBookingsFrom').value;
+  let toStr = document.getElementById('rBookingsTo').value;
+  let status = document.getElementById('rBookingsStatus').value;
+  let list = filterBookingsByRange(getAllBookings(whFilter), fromStr, toStr, status);
+  let rows = [["رقم الحجز","المخزن","المورد","رقم الأوردر","نوع البضاعة","نوع العربية","عدد العربيات","الكراتين","بالتات","التاريخ","الوقت","الحالة"]];
+  list.forEach(b=>rows.push([b.id, b.warehouseName, b.supplier, b.orderNum, b.goodsType, b.truckType||'', b.truckCount||'', b.cartons||'', b.palletLoading||'', formatDate(b.date), b.time, statusLabel(b.status)]));
+  downloadExcel([{name:'كل الحجوزات', data: rows}], 'كل_الحجوزات.xlsx');
+}
+
+function exportSlotsUtilization() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rUtilFrom').value;
+  let toStr = document.getElementById('rUtilTo').value;
+  if (!fromStr || !toStr) return;
+  if (fromStr > toStr) { let t = fromStr; fromStr = toStr; toStr = t; }
+  let whIds = whFilter ? [whFilter] : Object.keys(WAREHOUSES);
+
+  let rows = [["التاريخ","محجوز","انتظار","مغلق","متاح","% إشغال"]];
+  let d = new Date(fromStr);
+  let end = new Date(toStr);
+  while (d <= end) {
+    let date = d.toISOString().split('T')[0];
+    let booked = 0, blocked = 0;
+    let totalSlots = SLOTS_PER_DAY.length * whIds.length;
+    whIds.forEach(whId => {
+      SLOTS_PER_DAY.forEach(time => {
+        if (isBlocked(whId, date, time)) { blocked++; return; }
+        let slotBookings = (warehouseData[whId]?.bookings || []).filter(b => b.date === date && b.time === time && b.status !== 'rejected');
+        if (slotBookings.length) booked++;
+      });
+    });
+    let available = totalSlots - blocked - booked;
+    let util = totalSlots ? Math.round((booked / (totalSlots - blocked || totalSlots)) * 100) : 0;
+    rows.push([formatDate(date), booked, 0, blocked, available, util+'%']);
+    d.setDate(d.getDate()+1);
+  }
+  downloadExcel([{name:'استخدام Slots', data: rows}], 'استخدام_الSlots.xlsx');
+}
+
+function exportSupplierSummary() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rSupFrom').value;
+  let toStr = document.getElementById('rSupTo').value;
+  let list = filterBookingsByRange(getAllBookings(whFilter), fromStr, toStr, '');
+  let map = {};
+  list.forEach(b=>{
+    let key = (b.supplier||'').trim() || '—';
+    if (!map[key]) map[key] = { supplier: key, total: 0, approved: 0, completed: 0, rejected: 0 };
+    map[key].total += 1;
+    if (b.status === 'approved') map[key].approved += 1;
+    if (b.status === 'completed') map[key].completed += 1;
+    if (b.status === 'rejected') map[key].rejected += 1;
+  });
+  let rows = [["المورد","إجمالي","مؤكد","مكتمل","مرفوض"]];
+  Object.values(map).sort((a,b)=>b.total-a.total).forEach(s=>rows.push([s.supplier, s.total, s.approved, s.completed, s.rejected]));
+  downloadExcel([{name:'ملخص الموردين', data: rows}], 'ملخص_الموردين.xlsx');
+}
+
+function exportBlockedSlots() {
+  let whFilter = getReportsWarehouseFilter();
+  let fromStr = document.getElementById('rBlockedFrom').value;
+  let toStr = document.getElementById('rBlockedTo').value;
+  let list = getAllBlockedSlots(whFilter).filter(x=>{
+    if (fromStr && x.date < fromStr) return false;
+    if (toStr && x.date > toStr) return false;
+    return true;
+  });
+  let rows = [["المخزن","التاريخ","الوقت"]];
+  list.forEach(x=>rows.push([x.warehouseName, formatDate(x.date), x.time]));
+  downloadExcel([{name:'Slots مقفولة', data: rows}], 'Slots_مقفولة.xlsx');
+}
+
+function statusLabel(s) {
+  if (s === 'approved') return 'مؤكد';
+  if (s === 'completed') return 'مكتمل';
+  if (s === 'pending') return 'معلق';
+  if (s === 'rejected') return 'مرفوض';
+  return s || '';
+}
+
+// Make functions global
+window.openBookingModal = openBookingModal;
+window.closeModal = closeModal;
+window.pickSlot = pickSlot;
+window.completeBooking = completeBooking;
+window.cancelBooking = cancelBooking;
+window.switchPage = switchPage;
+window.renderBookingsTable = renderBookingsTable;
+window.checkCapacity = checkCapacity;
+
+// Initialize
+initWarehouseData();
+document.getElementById('whDate').value = today();
+
+// suppliers are reset to supplier_admin on load (see USERS section above)
+</script>
+</body>
+</html>
