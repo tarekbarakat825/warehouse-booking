@@ -279,18 +279,25 @@ tbody tr:hover td{background:#fafaf8}
     </div>
     <button class="login-btn" id="loginBtn">دخول ←</button>
     
-    <div class="signup-link" style="opacity:.8">
-      لإنشاء حسابات موردين يرجى التواصل مع الإدارة
+    <div class="signup-link" onclick="document.getElementById('signupModal')?.classList.add('open');" style="pointer-events:auto;position:relative;z-index:50">
+      ليس لديك حساب؟
+      <button type="button" id="showSignupBtn" onclick="event.stopPropagation(); document.getElementById('signupModal')?.classList.add('open');" style="all:unset;color:var(--accent);text-decoration:none;cursor:pointer;font-weight:600;pointer-events:auto;position:relative;z-index:60">إنشاء حساب جديد للمورد</button>
     </div>
   </div>
 </div>
 
-<!-- SIGNUP MODAL (disabled) -->
+<!-- SIGNUP MODAL -->
 <div class="modal-overlay" id="signupModal" onclick="this.classList.remove('open')">
   <div class="modal" onclick="event.stopPropagation()">
     <button class="modal-close" id="closeSignupBtn" type="button" onclick="document.getElementById('signupModal')?.classList.remove('open')">✕</button>
     <h3>📝 إنشاء حساب مورد جديد</h3>
-    <div class="empty-state"><p>تم إيقاف إنشاء حسابات الموردين من داخل النظام.</p></div>
+    <div class="form-group"><label>اسم الشركة</label><input type="text" id="signupCompany" placeholder="مثال: شركة النيل للتوريدات"></div>
+    <div class="form-group"><label>اختر المخزن الافتراضي</label><select id="signupWarehouse"><option value="warehouse1">🏭 المخزن الأول</option><option value="warehouse2">🏭 المخزن الثاني</option><option value="warehouse3">🏭 المخزن الثالث</option><option value="warehouse4">🏭 المخزن الرابع</option></select></div>
+    <div class="form-group"><label>اسم المستخدم</label><input type="text" id="signupUsername" placeholder="اختر اسم مستخدم"></div>
+    <div class="form-group"><label>البريد الإلكتروني</label><input type="email" id="signupEmail" placeholder="example@domain.com"></div>
+    <div class="form-group"><label>كلمة المرور</label><input type="password" id="signupPassword" placeholder="أدخل كلمة المرور"></div>
+    <div class="form-group"><label>تأكيد كلمة المرور</label><input type="password" id="signupConfirmPassword" placeholder="أعد إدخال كلمة المرور"></div>
+    <button class="btn-primary" id="doSignupBtn" type="button">إنشاء حساب</button>
   </div>
 </div>
 
@@ -1698,6 +1705,90 @@ function saveUsersFromModal() {
 }
 
 let currentWarehouseAccess = 'all'; // 'all' | 'single'
+let currentRole = null;
+const SESSION_STORAGE_KEY = 'sessionState';
+
+function saveSessionState(state) {
+  try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state || {})); } catch(e) {}
+}
+
+function loadSessionState() {
+  try { return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || 'null'); } catch(e) { return null; }
+}
+
+function clearSessionState() {
+  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch(e) {}
+}
+
+function applyWarehouseLogin(match) {
+  currentRole = 'warehouse';
+  currentWarehouseAccess = match.access || 'all';
+  document.getElementById('topbarNav').innerHTML = `
+    <button class="tab-btn active" onclick="switchPage('warehouse')">🏭 المخازن</button>
+    <button class="tab-btn" onclick="switchPage('bookings')">📋 الحجوزات</button>
+    <button class="tab-btn" onclick="switchPage('reports')">📊 التقارير</button>
+    ${currentWarehouseAccess !== 'single' ? '<button class="tab-btn" onclick="openUsersModal()">👤 مستخدمي المخازن</button>' : ''}
+    ${currentWarehouseAccess !== 'single' ? '<button class="tab-btn" onclick="openSupplierUsersModal()">🚚 مستخدمي الموردين</button>' : ''}
+  `;
+  document.getElementById('userPillLabel').textContent = match.label || '—';
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('topbar').style.display = 'flex';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-warehouse').classList.add('active');
+  document.getElementById('whDate').value = today();
+
+  // Restrict warehouse selection for non-admin users
+  if (currentWarehouseAccess === 'single' && match.warehouseId) {
+    currentWarehouse = match.warehouseId;
+    let sel = document.getElementById('selectedWarehouse');
+    if (sel) {
+      sel.value = match.warehouseId;
+      sel.disabled = true;
+      sel.style.opacity = 0.7;
+      sel.style.cursor = 'not-allowed';
+    }
+    let bSel = document.getElementById('bookingsWarehouseFilter');
+    if (bSel) {
+      bSel.value = match.warehouseId;
+      bSel.disabled = true;
+      bSel.style.opacity = 0.7;
+      bSel.style.cursor = 'not-allowed';
+    }
+    let rSel = document.getElementById('reportsWarehouseFilter');
+    if (rSel) {
+      rSel.value = match.warehouseId;
+      rSel.disabled = true;
+      rSel.style.opacity = 0.7;
+      rSel.style.cursor = 'not-allowed';
+    }
+  } else {
+    let sel = document.getElementById('selectedWarehouse');
+    if (sel) { sel.disabled = false; sel.style.opacity = 1; sel.style.cursor = 'pointer'; }
+    let bSel = document.getElementById('bookingsWarehouseFilter');
+    if (bSel) { bSel.disabled = false; bSel.value = ''; bSel.style.opacity = 1; bSel.style.cursor = 'pointer'; }
+    let rSel = document.getElementById('reportsWarehouseFilter');
+    if (rSel) { rSel.disabled = false; rSel.value = ''; rSel.style.opacity = 1; rSel.style.cursor = 'pointer'; }
+  }
+
+  renderWarehouse();
+}
+
+function applySupplierLogin(match) {
+  currentRole = 'supplier';
+  currentSupplierData = match;
+  document.getElementById('topbarNav').innerHTML = `<button class="tab-btn active" onclick="switchPage('supplier')">🚚 بوابة المورد</button>`;
+  document.getElementById('userPillLabel').textContent = match.company || '—';
+  document.getElementById('supName').value = match.company || '';
+  if (match.defaultWarehouse) {
+    document.getElementById('bookingWarehouseSelect').value = match.defaultWarehouse;
+  }
+  document.getElementById('supDate').value = today();
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('topbar').style.display = 'flex';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-supplier').classList.add('active');
+  renderSupplierSlots();
+}
 
 let selectedLoginRole = 'warehouse';
 
@@ -1716,75 +1807,14 @@ function doLogin() {
     let match = loadWarehouseUsers().find(u => u.username === user && u.password === pass);
     if (!match) { err.classList.add('show'); return; }
     err.classList.remove('show');
-    currentRole = 'warehouse';
-    currentWarehouseAccess = match.access || 'all';
-    document.getElementById('topbarNav').innerHTML = `
-      <button class="tab-btn active" onclick="switchPage('warehouse')">🏭 المخازن</button>
-      <button class="tab-btn" onclick="switchPage('bookings')">📋 الحجوزات</button>
-      <button class="tab-btn" onclick="switchPage('reports')">📊 التقارير</button>
-      ${currentWarehouseAccess !== 'single' ? '<button class="tab-btn" onclick="openUsersModal()">👤 مستخدمي المخازن</button>' : ''}
-      ${currentWarehouseAccess !== 'single' ? '<button class="tab-btn" onclick="openSupplierUsersModal()">🚚 مستخدمي الموردين</button>' : ''}
-    `;
-    document.getElementById('userPillLabel').textContent = match.label;
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('topbar').style.display = 'flex';
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById('page-warehouse').classList.add('active');
-    document.getElementById('whDate').value = today();
-    // Restrict warehouse selection for non-admin users
-    if (currentWarehouseAccess === 'single' && match.warehouseId) {
-      currentWarehouse = match.warehouseId;
-      let sel = document.getElementById('selectedWarehouse');
-      if (sel) {
-        sel.value = match.warehouseId;
-        sel.disabled = true;
-        sel.style.opacity = 0.7;
-        sel.style.cursor = 'not-allowed';
-      }
-      // Also lock other warehouse filters to the same warehouse
-      let bSel = document.getElementById('bookingsWarehouseFilter');
-      if (bSel) {
-        bSel.value = match.warehouseId;
-        bSel.disabled = true;
-        bSel.style.opacity = 0.7;
-        bSel.style.cursor = 'not-allowed';
-      }
-      let rSel = document.getElementById('reportsWarehouseFilter');
-      if (rSel) {
-        rSel.value = match.warehouseId;
-        rSel.disabled = true;
-        rSel.style.opacity = 0.7;
-        rSel.style.cursor = 'not-allowed';
-      }
-    } else {
-      // Admin: allow selecting any warehouse
-      let sel = document.getElementById('selectedWarehouse');
-      if (sel) { sel.disabled = false; sel.style.opacity = 1; sel.style.cursor = 'pointer'; }
-      let bSel = document.getElementById('bookingsWarehouseFilter');
-      if (bSel) { bSel.disabled = false; bSel.value = ''; bSel.style.opacity = 1; bSel.style.cursor = 'pointer'; }
-      let rSel = document.getElementById('reportsWarehouseFilter');
-      if (rSel) { rSel.disabled = false; rSel.value = ''; rSel.style.opacity = 1; rSel.style.cursor = 'pointer'; }
-    }
-    renderWarehouse();
+    applyWarehouseLogin(match);
+    saveSessionState({ role: 'warehouse', username: match.username });
   } else if (selectedLoginRole === 'supplier') {
     let match = suppliers.find(u => u.username === user && u.password === pass);
     if (!match) { err.classList.add('show'); return; }
     err.classList.remove('show');
-    currentRole = 'supplier';
-    currentSupplierData = match;
-    document.getElementById('topbarNav').innerHTML = `<button class="tab-btn active" onclick="switchPage('supplier')">🚚 بوابة المورد</button>`;
-    document.getElementById('userPillLabel').textContent = match.company;
-    document.getElementById('supName').value = match.company;
-    // تعيين المخزن الافتراضي في خانة الاختيار
-    if (match.defaultWarehouse) {
-      document.getElementById('bookingWarehouseSelect').value = match.defaultWarehouse;
-    }
-    document.getElementById('supDate').value = today();
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('topbar').style.display = 'flex';
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById('page-supplier').classList.add('active');
-    renderSupplierSlots();
+    applySupplierLogin(match);
+    saveSessionState({ role: 'supplier', username: match.username });
   }
 }
 
@@ -1804,6 +1834,7 @@ function doLogout() {
   currentSupplierData = null;
   selectedSlot = null;
   currentWarehouseAccess = 'all';
+  clearSessionState();
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('topbar').style.display = 'none';
@@ -1870,6 +1901,9 @@ document.getElementById('saveSupplierUsersBtn').onclick = saveSupplierUsersFromM
 // Forgot password
 document.getElementById('forgotPassBtn').onclick = openForgotModal;
 document.getElementById('doResetBtn').onclick = doResetPassword;
+
+// Supplier signup (enabled)
+document.getElementById('doSignupBtn').onclick = doSignup;
 
 // ==================== REPORTS ====================
 function initReportsDefaults() {
@@ -2188,6 +2222,24 @@ window.checkCapacity = checkCapacity;
 // Initialize
 initWarehouseData();
 document.getElementById('whDate').value = today();
+
+// Restore session after refresh
+(function restoreSession() {
+  const st = loadSessionState();
+  if (!st || !st.role || !st.username) return;
+  if (st.role === 'warehouse') {
+    const u = loadWarehouseUsers().find(x => x.username === st.username);
+    if (u) {
+      applyWarehouseLogin(u);
+    }
+  }
+  if (st.role === 'supplier') {
+    const u = suppliers.find(x => x.username === st.username);
+    if (u) {
+      applySupplierLogin(u);
+    }
+  }
+})();
 
 // suppliers are reset to supplier_admin on load (see USERS section above)
 </script>
