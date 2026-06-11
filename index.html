@@ -7,7 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Google Apps Script API (Sheets backend) -->
 <script>
-  const API_URL = "https://warehouse-proxy.tarekbarakat825.workers.dev";
+  const API_URL = "https://script.google.com/macros/s/AKfycbz1GFSuqsUxgwBc9rwZyJOU1shN99MYT68qq0j1Qzqk2_wXdbb4Yv_5FRW2SGKgzfbNPw/exec";
   async function apiGet(action, params = {}) {
     const url = new URL(API_URL);
     url.searchParams.set('action', action);
@@ -731,6 +731,35 @@ async function loadWarehouseDataFromApi() {
       warehouseData[whId].blockedSlots = [];
     }
 
+    function normalizeDate(v) {
+      if (!v) return '';
+      // Accept YYYY-MM-DD or ISO strings; return YYYY-MM-DD
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+      try {
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return '';
+        // Use local date components
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        const day = String(d.getDate()).padStart(2,'0');
+        return `${y}-${m}-${day}`;
+      } catch { return ''; }
+    }
+
+    function normalizeTime(v) {
+      if (!v) return '';
+      // Accept HH:MM
+      if (typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)) return v;
+      // Excel time sometimes comes as Date ISO with 1899-12-30
+      try {
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return '';
+        const hh = String(d.getUTCHours()).padStart(2,'0');
+        const mm = String(d.getUTCMinutes()).padStart(2,'0');
+        return `${hh}:${mm}`;
+      } catch { return ''; }
+    }
+
     bookings.forEach(b => {
       const whId = b.warehouseId || b.warehouse || b.warehouseid;
       if (!whId || !warehouseData[whId]) return;
@@ -746,8 +775,8 @@ async function loadWarehouseDataFromApi() {
         truckCount: parseInt(b.truckCount) || 1,
         cartons: parseInt(b.cartons) || 1,
         palletLoading: b.palletLoading || '',
-        date: b.date || '',
-        time: b.time || '',
+        date: normalizeDate(b.date),
+        time: normalizeTime(b.time),
         status: b.status || 'approved',
         notes: b.notes || '',
         createdAt: b.createdAt || '',
