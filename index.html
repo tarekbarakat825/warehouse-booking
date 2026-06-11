@@ -701,6 +701,55 @@ function saveSupplierUsers(users) {
 // Initialize suppliers from storage
 suppliers = loadSupplierUsers();
 
+// ==================== USERS SYNC (Google Sheets) ====================
+let remoteWarehouseUsers = null;
+let remoteSuppliers = null;
+
+async function loadUsersFromApi() {
+  try {
+    const [wRes, sRes] = await Promise.all([
+      apiGet('listWarehouseUsers'),
+      apiGet('listSuppliers'),
+    ]);
+    if (wRes && wRes.ok && Array.isArray(wRes.data)) remoteWarehouseUsers = wRes.data;
+    if (sRes && sRes.ok && Array.isArray(sRes.data)) remoteSuppliers = sRes.data;
+    // If supplier users exist remotely, use them for login
+    if (Array.isArray(remoteSuppliers) && remoteSuppliers.length) {
+      suppliers = remoteSuppliers.map(x => ({
+        username: x.username || '',
+        email: x.email || '',
+        password: x.password || '',
+        company: x.company || '',
+        defaultWarehouse: x.defaultWarehouse || x.defaultwarehouse || 'warehouse1',
+        updatedAt: x.updatedAt || x.updatedat || '',
+        createdAt: x.createdAt || x.createdat || '',
+      }));
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function getWarehouseUsersForLogin() {
+  if (Array.isArray(remoteWarehouseUsers) && remoteWarehouseUsers.length) {
+    return remoteWarehouseUsers.map(u => ({
+      username: u.username || '',
+      password: u.password || '',
+      label: u.label || (u.access === 'all' ? 'الادمن' : 'مستخدم مخزن'),
+      access: u.access || 'single',
+      warehouseId: u.warehouseId || u.warehouseid || '',
+    }));
+  }
+  return loadWarehouseUsers();
+}
+
+function getSuppliersForLogin() {
+  if (Array.isArray(remoteSuppliers) && remoteSuppliers.length) {
+    return suppliers;
+  }
+  return suppliers;
+}
+
 function initWarehouseData() {
   for (let whId in WAREHOUSES) {
     if (!warehouseData[whId]) {
@@ -1632,6 +1681,8 @@ function deleteWarehouseUserRow(idx) {
   if (!confirm('هل تريد حذف هذا المستخدم؟')) return;
   users.splice(idx, 1);
   saveWarehouseUsers(users);
+  // Sync delete to Google Sheets (best-effort)
+  apiPost('deleteWarehouseUser', { username: u.username }).catch(()=>{});
   renderUsersModal();
 }
 
@@ -1671,8 +1722,11 @@ function renderSupplierUsersModal() {
 }
 
 function openSupplierUsersModal() {
-  renderSupplierUsersModal();
-  document.getElementById('supplierUsersModal')?.classList.add('open');
+  loadUsersFromApi().then(() => {
+    // Render from latest (remote will update suppliers array)
+    renderSupplierUsersModal();
+    document.getElementById('supplierUsersModal')?.classList.add('open');
+  });
 }
 
 function addSupplierUserRow() {
@@ -1688,9 +1742,11 @@ function deleteSupplierUserRow(idx) {
   if (!list[idx]) return;
   if (list.length === 1) { alert('لا يمكن حذف آخر مستخدم للموردين'); return; }
   if (!confirm('هل تريد حذف هذا المستخدم؟')) return;
+  let u = list[idx];
   list.splice(idx, 1);
   saveSupplierUsers(list);
   suppliers = loadSupplierUsers();
+  apiPost('deleteSupplier', { username: u.username }).catch(()=>{});
   renderSupplierUsersModal();
 }
 
@@ -1713,13 +1769,35 @@ function saveSupplierUsersFromModal() {
   if (new Set(emails).size !== emails.length) { alert('⚠️ بريد مستخدمي الموردين مكرر'); return; }
   saveSupplierUsers(list);
   suppliers = loadSupplierUsers();
+
+  // Sync to Google Sheets
+  Promise.resolve().then(async () => {
+    try {
+      for (let u of list) {
+        await apiPost('upsertSupplier', {
+          username: u.username,
+          email: u.email,
+          password: u.password,
+          company: u.company,
+          defaultWarehouse: u.defaultWarehouse || 'warehouse1',
+          updatedAt: nowIso(),
+        });
+      }
+      await loadUsersFromApi();
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
   alert('✅ تم حفظ مستخدمي الموردين');
   document.getElementById('supplierUsersModal')?.classList.remove('open');
 }
 
 function openUsersModal() {
-  renderUsersModal();
-  document.getElementById('usersModal')?.classList.add('open');
+  loadUsersFromApi().then(() => {
+    renderUsersModal();
+    document.getElementById('usersModal')?.classList.add('open');
+  });
 }
 
 function saveUsersFromModal() {
@@ -1762,6 +1840,26 @@ function saveUsersFromModal() {
   }
 
   saveWarehouseUsers(users);
+
+  // Sync to Google Sheets
+  Promise.resolve().then(async () => {
+    try {
+      for (let u of users) {
+        await apiPost('upsertWarehouseUser', {
+          username: u.username,
+          password: u.password,
+          label: u.label || '',
+          access: u.access,
+          warehouseId: u.warehouseId || '',
+          updatedAt: nowIso(),
+        });
+      }
+      await loadUsersFromApi();
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
   alert('✅ تم حفظ المستخدمين');
   document.getElementById('usersModal')?.classList.remove('open');
 }
@@ -1874,13 +1972,13 @@ function doLogin() {
   let err = document.getElementById('loginError');
   
   if (selectedLoginRole === 'warehouse') {
-    let match = loadWarehouseUsers().find(u => u.username === user && u.password === pass);
+    let match = getWarehouseUsersForLogin().find(u => u.username === user && u.password === pass);
     if (!match) { err.classList.add('show'); return; }
     err.classList.remove('show');
     applyWarehouseLogin(match);
     saveSessionState({ role: 'warehouse', username: match.username });
   } else if (selectedLoginRole === 'supplier') {
-    let match = suppliers.find(u => u.username === user && u.password === pass);
+    let match = getSuppliersForLogin().find(u => u.username === user && u.password === pass);
     if (!match) { err.classList.add('show'); return; }
     err.classList.remove('show');
     applySupplierLogin(match);
