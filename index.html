@@ -1987,10 +1987,13 @@ function selectRole(role) {
   document.getElementById('roleChipSupplier').classList.toggle('selected', role === 'supplier');
 }
 
-function doLogin() {
+async function doLogin() {
   let user = document.getElementById('loginUser').value.trim();
   let pass = document.getElementById('loginPass').value;
   let err = document.getElementById('loginError');
+
+  // Always load latest users from Google Sheets before attempting login
+  try { await loadUsersFromApi(); } catch (e) {}
   
   if (selectedLoginRole === 'warehouse') {
     let match = getWarehouseUsersForLogin().find(u => u.username === user && u.password === pass);
