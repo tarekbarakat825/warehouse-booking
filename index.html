@@ -476,7 +476,7 @@ function closeSignupModal(){
           <option>تريلا بالتات</option>
           <option>تريلا بدون بالتات</option>
         </select></div>
-        <div class="form-group"><label>عدد العربيات <span style="color:red">*</span></label><input type="number" id="supTruckCount" min="1" max="20" value="1" oninput="checkCapacity()"></div>
+        <div class="form-group"><label>عدد العربيات <span style="color:red">*</span></label><input type="number" id="supTruckCount" min="0.5" max="20" step="0.5" value="1" oninput="checkCapacity()"></div>
         <div class="form-group"><label>عدد الكراتين <span style="color:red">*</span></label><input type="number" id="supCartons" min="1" value="1"></div>
       </div>
       <div class="form-group"><label>التحميل على بالتات</label><div class="radio-group"><label><input type="radio" name="palletLoading" value="نعم"> نعم</label><label><input type="radio" name="palletLoading" value="لا" checked> لا</label></div></div>
@@ -870,6 +870,7 @@ async function loadWarehouseDataFromApi() {
       if (!whId || !warehouseData[whId]) return;
       warehouseData[whId].bookings.push({
         id: b.id,
+        groupId: b.groupId || b.groupid || '',
         warehouse: whId,
         supplier: b.supplier || '',
         orderNum: b.orderNum || '',
@@ -877,7 +878,9 @@ async function loadWarehouseDataFromApi() {
         plate: b.plate || '',
         driver: b.driver || '',
         truckType: b.truckType || '',
-        truckCount: parseInt(b.truckCount) || 1,
+        // truckCount can be fractional when a heavy truck is split across slots
+        truckCount: (b.truckCount === '' || b.truckCount === null || b.truckCount === undefined) ? 1 : (parseFloat(b.truckCount) || 0),
+        unitsConsumed: (b.unitsConsumed === '' || b.unitsConsumed === null || b.unitsConsumed === undefined) ? '' : (parseFloat(b.unitsConsumed) || 0),
         cartons: parseInt(b.cartons) || 1,
         palletLoading: b.palletLoading || '',
         date: normalizeDate(b.date),
@@ -966,6 +969,7 @@ async function upsertBookingToApi(whId, booking) {
     const sheetTime = timeStr ? ("'" + timeStr) : '';
     await apiPost('upsertBooking', {
       id: booking.id,
+      groupId: booking.groupId || '',
       warehouseId: whId,
       supplier: booking.supplier || '',
       orderNum: booking.orderNum || '',
@@ -974,6 +978,7 @@ async function upsertBookingToApi(whId, booking) {
       driver: booking.driver || '',
       truckType: booking.truckType || '',
       truckCount: booking.truckCount || 1,
+      unitsConsumed: booking.unitsConsumed ?? '',
       cartons: booking.cartons || 1,
       palletLoading: booking.palletLoading || '',
       date: sheetDate,
@@ -1187,7 +1192,7 @@ function checkCapacity() {
   if (!currentSupplierData) return;
   
   let date = document.getElementById('supDate').value;
-  let truckCount = parseInt(document.getElementById('supTruckCount').value) || 1;
+  let truckCount = parseFloat(document.getElementById('supTruckCount').value) || 1;
   let selectedTimeElem = document.querySelector('.slot-pick.selected');
   let time = selectedTimeElem ? selectedTimeElem.getAttribute('data-time') : null;
   let whId = document.getElementById('bookingWarehouseSelect').value;
@@ -1422,7 +1427,7 @@ function renderMyBookings() {
       <td><strong>${b.id}</strong></td>
       <td>${formatDate(b.date)}</td>
       <td>${b.time || '-'}</td>
-      <td>${b.truckCount || 1}</td>
+      <td>${fmtCap(parseFloat(b.truckCount) || 0)}</td>
       <td>${statusLabel(b.status)}</td>
       <td><button class="btn-sm btn-details" type="button" onclick="trackMyBooking('${b.id}')">تتبع</button></td>
     </tr>`;
@@ -1443,7 +1448,7 @@ function pickSlot(el, time) {
   btn.disabled = false;
   
   let date = document.getElementById('supDate').value;
-  let truckCount = parseInt(document.getElementById('supTruckCount').value) || 1;
+  let truckCount = parseFloat(document.getElementById('supTruckCount').value) || 1;
   let truckType = document.getElementById('supTruckType').value;
   let requestedUnits = truckCount * truckUnitWeight(truckType);
   let whId = document.getElementById('bookingWarehouseSelect').value;
@@ -1470,7 +1475,7 @@ function submitBooking() {
   let plate = document.getElementById('supPlate').value.trim();
   let driver = document.getElementById('supDriver').value.trim();
   let truckType = document.getElementById('supTruckType').value;
-  let truckCount = parseInt(document.getElementById('supTruckCount').value);
+  let truckCount = parseFloat(document.getElementById('supTruckCount').value);
   let cartons = parseInt(document.getElementById('supCartons').value);
   let palletLoading = document.querySelector('input[name="palletLoading"]:checked').value;
   let qty = '';
@@ -1481,7 +1486,7 @@ function submitBooking() {
   // Optional: orderNum, plate, driver
   if (!goodsType) { showAlert('bookAlert', 'يرجى اختيار نوع البضاعة', 'error'); return; }
   if (!truckType) { showAlert('bookAlert', 'يرجى اختيار نوع العربية', 'error'); return; }
-  if (truckCount <= 0 || truckCount > 20) { showAlert('bookAlert', 'عدد العربيات يجب أن يكون بين 1 و 20', 'error'); return; }
+  if (truckCount < 0.5 || truckCount > 20) { showAlert('bookAlert', 'عدد العربيات يجب أن يكون بين 0.5 و 20', 'error'); return; }
   if (cartons <= 0) { showAlert('bookAlert', 'عدد الكراتين يجب أن يكون أكبر من صفر', 'error'); return; }
   if (!date) { showAlert('bookAlert', 'يرجى اختيار التاريخ', 'error'); return; }
   if (!selectedSlot) { showAlert('bookAlert', 'يرجى اختيار الوقت', 'error'); return; }
