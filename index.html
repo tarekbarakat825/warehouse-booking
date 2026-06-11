@@ -782,6 +782,39 @@ function ensureDataLoaded() {
   return dataLoadPromise;
 }
 
+// Auto-sync (poll) every 10 seconds when logged in
+let autoSyncTimer = null;
+function startAutoSync() {
+  stopAutoSync();
+  autoSyncTimer = setInterval(async () => {
+    if (!currentRole) return;
+    // force reload
+    dataLoadPromise = null;
+    await ensureDataLoaded();
+    // refresh current visible page
+    try {
+      if (currentRole === 'warehouse') {
+        // update active pages if visible
+        if (document.getElementById('page-warehouse')?.classList.contains('active')) renderWarehouse();
+        if (document.getElementById('page-bookings')?.classList.contains('active')) renderBookingsTable();
+        if (document.getElementById('page-reports')?.classList.contains('active')) { initReportsDefaults(); refreshReportsDashboard(); }
+      }
+      if (currentRole === 'supplier') {
+        if (document.getElementById('page-supplier')?.classList.contains('active')) renderSupplierSlots();
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  }, 10000);
+}
+
+function stopAutoSync() {
+  if (autoSyncTimer) {
+    clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+  }
+}
+
 function saveWarehouseData(whId) {
   localStorage.setItem(`whBookings_${whId}`, JSON.stringify(warehouseData[whId].bookings));
   localStorage.setItem(`whBlocked_${whId}`, JSON.stringify(warehouseData[whId].blockedSlots));
@@ -1773,6 +1806,7 @@ function applyWarehouseLogin(match) {
   // Load latest shared data before rendering
   ensureDataLoaded().then(() => {
     renderWarehouse();
+    startAutoSync();
   });
 }
 
@@ -1793,6 +1827,7 @@ function applySupplierLogin(match) {
   // Load latest shared data before rendering
   ensureDataLoaded().then(() => {
     renderSupplierSlots();
+    startAutoSync();
   });
 }
 
@@ -1840,6 +1875,7 @@ function doLogout() {
   currentSupplierData = null;
   selectedSlot = null;
   currentWarehouseAccess = 'all';
+  stopAutoSync();
   clearSessionState();
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
