@@ -419,6 +419,21 @@ function closeSignupModal(){
     <h1>بوابة المورد</h1>
     <p>احجز موعد استلام (من 9 صباحاً إلى 4 مساءً - الحد الأقصى 5 عربيات لكل موعد)</p>
   </div>
+
+  <div class="report-card" style="margin-bottom:16px">
+    <div class="report-card-head">
+      <div>
+        <div class="report-card-title">📌 حجوزاتي</div>
+        <div class="report-card-sub">كل أرقام الحجز الخاصة بك (لن تختفي بعد Refresh)</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;max-height:220px">
+      <table class="preview-table" style="margin-top:0">
+        <thead><tr><th>رقم الحجز</th><th>التاريخ</th><th>الوقت</th><th>عدد العربيات</th><th>الحالة</th></tr></thead>
+        <tbody id="myBookingsTbody"></tbody>
+      </table>
+    </div>
+  </div>
   
   <!-- اختيار المخزن عند الحجز -->
   <div class="warehouse-selector">
@@ -1289,6 +1304,38 @@ function renderSupplierSlots() {
   }).join('');
 }
 
+function renderMyBookings() {
+  if (!currentSupplierData) return;
+  let tbody = document.getElementById('myBookingsTbody');
+  if (!tbody) return;
+  // Supplier name used in bookings is the company name
+  let supplierName = (currentSupplierData.company || document.getElementById('supName')?.value || '').trim();
+  let all = [];
+  for (let whId in warehouseData) {
+    (warehouseData[whId]?.bookings || []).forEach(b => {
+      if ((b.supplier || '').trim() === supplierName) {
+        all.push({ ...b, warehouseId: whId });
+      }
+    });
+  }
+  all.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+
+  if (!all.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:#999">لا توجد حجوزات خاصة بك بعد</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = all.slice(0, 50).map(b => {
+    return `<tr>
+      <td><strong>${b.id}</strong></td>
+      <td>${formatDate(b.date)}</td>
+      <td>${b.time || '-'}</td>
+      <td>${b.truckCount || 1}</td>
+      <td>${statusLabel(b.status)}</td>
+    </tr>`;
+  }).join('');
+}
+
 function pickSlot(el, time) {
   document.querySelectorAll('.slot-pick').forEach(s => s.classList.remove('selected'));
   el.classList.add('selected');
@@ -1361,6 +1408,9 @@ function submitBooking() {
   saveWarehouseData(whId);
   // Sync to Sheets
   upsertBookingToApi(whId, booking);
+  // Update UI immediately (so other supplier sees capacity on next sync)
+  renderSupplierSlots();
+  renderMyBookings();
 
   let remaining = availableCapacity - truckCount;
   let message = `✅ تم تأكيد حجزك بنجاح! رقم حجزك: ${booking.id}`;
@@ -1384,6 +1434,7 @@ function submitBooking() {
   
   selectedSlot = null;
   renderSupplierSlots();
+  renderMyBookings();
   document.getElementById('trackerWrap').style.display = 'block';
   document.getElementById('trackId').value = booking.id;
   trackBooking();
@@ -1980,6 +2031,7 @@ function applySupplierLogin(match) {
   // Load latest shared data before rendering
   ensureDataLoaded().then(() => {
     renderSupplierSlots();
+    renderMyBookings();
     startAutoSync();
   });
 }
