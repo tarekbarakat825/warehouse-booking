@@ -7,7 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Google Apps Script API (Sheets backend) -->
 <script>
-  const API_URL = "https://script.google.com/macros/s/AKfycbz1GFSuqsUxgwBc9rwZyJOU1shN99MYT68qq0j1Qzqk2_wXdbb4Yv_5FRW2SGKgzfbNPw/exec";
+  const API_URL = "https://warehouse-proxy.tarekbarakat825.workers.dev";
   async function apiGet(action, params = {}) {
     const url = new URL(API_URL);
     url.searchParams.set('action', action);
