@@ -823,9 +823,11 @@ async function loadWarehouseDataFromApi() {
       try {
         const d = new Date(v);
         if (isNaN(d.getTime())) return '';
-        // Use local time (so it matches the user's timezone)
-        const hh = String(d.getHours()).padStart(2,'0');
-        const mm = String(d.getMinutes()).padStart(2,'0');
+        // IMPORTANT: Google Sheets often returns time-only cells as Date objects.
+        // When serialized to ISO they are shifted to UTC. We must read as UTC here
+        // so the time stays consistent across devices.
+        const hh = String(d.getUTCHours()).padStart(2,'0');
+        const mm = String(d.getUTCMinutes()).padStart(2,'0');
         return `${hh}:${mm}`;
       } catch { return ''; }
     }
@@ -924,6 +926,11 @@ function saveWarehouseData(whId) {
 
 async function upsertBookingToApi(whId, booking) {
   try {
+    const dateStr = (booking.date || '').trim();
+    const timeStr = (booking.time || '').trim();
+    // Force Sheets to store as text to avoid timezone / 1899-date conversions
+    const sheetDate = dateStr ? ("'" + dateStr) : '';
+    const sheetTime = timeStr ? ("'" + timeStr) : '';
     await apiPost('upsertBooking', {
       id: booking.id,
       warehouseId: whId,
@@ -936,8 +943,8 @@ async function upsertBookingToApi(whId, booking) {
       truckCount: booking.truckCount || 1,
       cartons: booking.cartons || 1,
       palletLoading: booking.palletLoading || '',
-      date: booking.date || '',
-      time: booking.time || '',
+      date: sheetDate,
+      time: sheetTime,
       status: booking.status || '',
       createdAt: booking.createdAt || '',
       checkInTime: booking.checkInTime || '',
@@ -1012,7 +1019,14 @@ function buildSupplierSummary(bookings) {
 }
 
 function genId() { return 'HYG-' + Math.random().toString(36).substr(2,4).toUpperCase(); }
-function today() { return new Date().toISOString().split('T')[0]; }
+function today() {
+  // Use local date (avoid UTC shift)
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function formatDate(d) { if (!d) return ''; let p = d.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
 function getSlotKey(d,t) { return d+'|'+t; }
 
