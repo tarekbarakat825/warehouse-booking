@@ -429,7 +429,7 @@ function closeSignupModal(){
     </div>
     <div style="overflow-x:auto;max-height:220px">
       <table class="preview-table" style="margin-top:0">
-        <thead><tr><th>رقم الحجز</th><th>التاريخ</th><th>الوقت</th><th>عدد العربيات</th><th>الحالة</th></tr></thead>
+        <thead><tr><th>رقم الحجز</th><th>التاريخ</th><th>الوقت</th><th>عدد العربيات</th><th>الحالة</th><th>إجراء</th></tr></thead>
         <tbody id="myBookingsTbody"></tbody>
       </table>
     </div>
@@ -898,7 +898,10 @@ function startAutoSync() {
         if (document.getElementById('page-reports')?.classList.contains('active')) { initReportsDefaults(); refreshReportsDashboard(); }
       }
       if (currentRole === 'supplier') {
-        if (document.getElementById('page-supplier')?.classList.contains('active')) renderSupplierSlots();
+        if (document.getElementById('page-supplier')?.classList.contains('active')) {
+          renderSupplierSlots();
+          renderMyBookings();
+        }
       }
     } catch(e) {
       console.error(e);
@@ -1321,7 +1324,7 @@ function renderMyBookings() {
   all.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
   if (!all.length) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:#999">لا توجد حجوزات خاصة بك بعد</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="color:#999">لا توجد حجوزات خاصة بك بعد</td></tr>`;
     return;
   }
 
@@ -1332,8 +1335,15 @@ function renderMyBookings() {
       <td>${b.time || '-'}</td>
       <td>${b.truckCount || 1}</td>
       <td>${statusLabel(b.status)}</td>
+      <td><button class="btn-sm btn-details" type="button" onclick="trackMyBooking('${b.id}')">تتبع</button></td>
     </tr>`;
   }).join('');
+}
+
+function trackMyBooking(id) {
+  document.getElementById('trackerWrap').style.display = 'block';
+  document.getElementById('trackId').value = String(id || '').trim();
+  trackBooking();
 }
 
 function pickSlot(el, time) {
