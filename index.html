@@ -3170,22 +3170,23 @@ initWarehouseData();
 document.getElementById('whDate').value = today();
 
 // Restore session after refresh
-(function restoreSession() {
+// Restore session after refresh (ensure latest users are loaded from Sheets first)
+(async function restoreSession() {
   const st = loadSessionState();
   if (!st || !st.role || !st.username) return;
+  try { await loadUsersFromApi(); } catch(e) {}
+
   if (st.role === 'warehouse') {
-    const u = loadWarehouseUsers().find(x => x.username === st.username);
+    const u = getWarehouseUsersForLogin().find(x => x.username === st.username);
     if (u) {
       applyWarehouseLogin(u);
-      // restore last page
       if (st.pageId) switchPage(st.pageId);
     }
   }
   if (st.role === 'supplier') {
-    const u = suppliers.find(x => x.username === st.username);
+    const u = getSuppliersForLogin().find(x => x.username === st.username);
     if (u) {
       applySupplierLogin(u);
-      // restore last page
       if (st.pageId) switchPage(st.pageId);
     }
   }
