@@ -123,7 +123,7 @@ body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:
 .today-badge{font-size:11px;font-family:var(--mono);background:var(--accent-light);color:var(--accent);border:1px solid #f8c9b3;border-radius:3px;padding:3px 8px;font-weight:500}
 
 /* STATS ROW */
-.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
 .stat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px}
 .stat-val{font-size:26px;font-weight:700;font-family:var(--mono);letter-spacing:-1px}
@@ -1254,6 +1254,8 @@ function isPastSlot(dateStr, timeStr) {
 }
 
 function slotStatus(whId, date, time) {
+  // Past days with no activity: treat as closed
+  if (date && date < today() && isNoActivityDay(whId, date)) return 'blocked';
   if (isPastSlot(date, time)) return 'past';
   if (isBlocked(whId, date, time)) return 'blocked';
   let available = getSlotAvailableCapacity(whId, date, time);
@@ -1331,6 +1333,9 @@ function renderWarehouse() {
   let whId = currentWarehouse;
   let whData = warehouseData[whId];
   let dayBookings = whData.bookings.filter(b => b.date === date && b.status !== 'rejected');
+
+  // Unique suppliers count (no duplicates)
+  let uniqueSuppliers = new Set(dayBookings.map(b => (b.supplier||'').trim()).filter(Boolean));
   
   let totalCapacity = SLOTS_PER_DAY.reduce((sum, t) => sum + slotCapacity(whId, date, t), 0);
   // Show booked as actual trucks (can be fractional)
@@ -1363,6 +1368,7 @@ function renderWarehouse() {
   document.getElementById('whStats').innerHTML = `
     <div class="stat-card"><div class="stat-label">السعة المتاحة</div><div class="stat-val green">${fmtCap(availableCapacity)}</div><div style="font-size:10px">من ${fmtCap(totalCapacity)} عربية</div></div>
     <div class="stat-card"><div class="stat-label">عربيات محجوزة</div><div class="stat-val accent">${fmtCap(bookedTrucks)}</div></div>
+    <div class="stat-card"><div class="stat-label">إجمالي الموردين</div><div class="stat-val">${uniqueSuppliers.size}</div></div>
     <div class="stat-card"><div class="stat-label">Slots مكتملة</div><div class="stat-val">${completedSlots}</div></div>
     <div class="stat-card"><div class="stat-label">Slots متبقية</div><div class="stat-val">${remainingSlots}</div></div>
     <div class="stat-card"><div class="stat-label">Slots مغلقة</div><div class="stat-val">${blocked}</div></div>
@@ -1792,6 +1798,7 @@ function trackBooking() {
   let warehouseName = WAREHOUSES[foundWhId]?.name || foundWhId;
   
   res.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:14px"><span>${foundBooking.id}</span><span class="badge badge-${color}">${label}</span></div>
+    <div class="info-row"><span class="info-key">رقم الدور</span><span class="info-val">${foundBooking.queueNo || '-'}</span></div>
     <div class="info-row"><span class="info-key">المخزن</span><span class="info-val">${warehouseName}</span></div>
     <div class="info-row"><span class="info-key">المورد</span><span class="info-val">${foundBooking.supplier}</span></div>
     <div class="info-row"><span class="info-key">الموعد</span><span class="info-val">${formatDate(foundBooking.date)} ${foundBooking.time}</span></div>
