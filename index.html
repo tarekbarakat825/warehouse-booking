@@ -1109,6 +1109,13 @@ function padNum(n, len) {
   return s;
 }
 
+function slotLetter(slotTime) {
+  // A,B,C... based on slot position in the day
+  const idx = SLOTS_PER_DAY.indexOf(slotTime);
+  if (idx < 0) return '';
+  return String.fromCharCode(65 + idx); // 65='A'
+}
+
 function genId() { return 'HYG-' + Math.random().toString(36).substr(2,4).toUpperCase(); }
 
 // Booking ID: first 3 chars from warehouse code, rest numbers
@@ -1669,14 +1676,19 @@ function submitBooking() {
   let createdIds = [];
 
   // Compute next queue number per slot (warehouse,date,time)
+  // Format: "1 A", "2 A" ... where letter identifies the slot.
   function nextQueueNo(slotTime) {
     let list = (warehouseData[whId]?.bookings || []).filter(b => b.date === date && b.time === slotTime);
     let maxQ = 0;
     list.forEach(b => {
-      let q = parseInt(b.queueNo);
+      // Extract leading integer from values like "3 A" or "3"
+      let m = String(b.queueNo || '').trim().match(/^(\d+)/);
+      let q = m ? parseInt(m[1], 10) : NaN;
       if (Number.isFinite(q) && q > maxQ) maxQ = q;
     });
-    return maxQ + 1;
+    let n = maxQ + 1;
+    let letter = slotLetter(slotTime);
+    return letter ? `${n} ${letter}` : String(n);
   }
 
   for (let i = startIdx; i < SLOTS_PER_DAY.length && remainingUnits > 0; i++) {
