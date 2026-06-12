@@ -245,6 +245,9 @@ tbody tr:hover td{background:#fafaf8}
 .kpi .l{font-size:10px;color:var(--muted);font-weight:700;margin-top:2px}
 .btn-export{font-family:var(--font);font-size:12px;font-weight:700;background:var(--green);color:#fff;border:none;border-radius:3px;padding:8px 16px;cursor:pointer}
 .btn-export-all{font-family:var(--font);font-size:13px;font-weight:700;background:var(--ink);color:#fff;border:none;border-radius:var(--r);padding:10px 22px;cursor:pointer}
+.split-line{background:#ffe7e7 !important}
+.split-line td{border-top:1px solid #f3b1b1}
+.split-pill{display:inline-block;background:#d73939;color:#fff;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:800;margin-inline-start:6px}
 .preview-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px}
 .preview-table thead th{text-align:right;font-size:9px;font-weight:700;color:var(--muted);padding:0 8px 7px 0}
 .preview-table tbody td{padding:7px 8px 7px 0}
@@ -530,7 +533,7 @@ function closeSignupModal(){
     <input type="date" class="date-input" id="filterDate">
     <input type="text" class="date-input" id="filterSearch" placeholder="بحث..." style="flex:1">
   </div>
-  <div class="table-wrap"><table id="bookingsTable"><thead><tr><th>رقم الحجز</th><th>رقم الدور</th><th>المخزن</th><th>المورد</th><th>رقم الأوردر</th><th>التاريخ</th><th>الوقت</th><th>نوع البضاعة</th><th>العربية</th><th>عدد العربيات</th><th>الكراتين</th><th>السيارة/السائق</th><th>وقت الدخول</th><th>وقت الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="bookingsTbody"></tbody></table></div>
+  <div class="table-wrap"><table id="bookingsTable"><thead><tr><th>رقم الحجز</th><th>رقم الجروب</th><th>رقم الدور</th><th>المخزن</th><th>المورد</th><th>رقم الأوردر</th><th>التاريخ</th><th>الوقت</th><th>نوع البضاعة</th><th>العربية</th><th>عدد العربيات</th><th>الكراتين</th><th>السيارة/السائق</th><th>وقت الدخول</th><th>وقت الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="bookingsTbody"></tbody></table></div>
 </div>
 
 <!-- REPORTS PAGE -->
@@ -1902,7 +1905,7 @@ function renderBookingsTable() {
   if (search) list = list.filter(b => b.supplier.toLowerCase().includes(search) || b.orderNum.toLowerCase().includes(search));
 
   let tbody = document.getElementById('bookingsTbody');
-  if (!list.length) { tbody.innerHTML = `<tr><td colspan="16"><div class="empty-state"><p>لا توجد حجوزات</p></div></td></tr>`; return; }
+  if (!list.length) { tbody.innerHTML = `<tr><td colspan="17"><div class="empty-state"><p>لا توجد حجوزات</p></div></td></tr>`; return; }
   let badge = {
     approved:'<span class="badge badge-green">مؤكد</span>',
     completed:'<span class="badge badge-blue">مكتمل</span>',
@@ -1911,8 +1914,12 @@ function renderBookingsTable() {
     pending:'<span class="badge badge-amber">معلق</span>',
     not_delivered:'<span class="badge badge-red">لم يتم التسليم</span>'
   };
-  tbody.innerHTML = list.map(b => `<tr>
-    <td><strong>${b.id}</strong></td>
+  tbody.innerHTML = list.map(b => {
+    const groupKey = deriveGroupKey(b);
+    const isSplit = !!(String(b.id||'').trim().match(/-\d+$/));
+    return `<tr class="${isSplit ? 'split-line' : ''}">
+    <td><strong>${b.id}</strong>${isSplit ? `<span class=\"split-pill\">Split</span>` : ''}</td>
+    <td>${groupKey || '-'}</td>
     <td>${b.queueNo || '-'}</td>
     <td>${b.warehouseName}</td>
     <td>${b.supplier}</td>
@@ -1936,7 +1943,8 @@ function renderBookingsTable() {
       <button class="btn-sm btn-complete" onclick="completeBooking('${b.warehouseId}','${b.id}')">مكتمل</button>
       <button class="btn-sm btn-cancel" onclick="cancelBooking('${b.warehouseId}','${b.id}')">إلغاء</button>
     </div>
-  </td></tr>`).join('');
+  </td></tr>`;
+  }).join('');
 }
 
 function markNotDelivered(whId, id) {
