@@ -432,7 +432,7 @@ function closeSignupModal(){
     </div>
     <div style="overflow-x:auto;max-height:220px">
       <table class="preview-table" style="margin-top:0">
-        <thead><tr><th>رقم الحجز</th><th>التاريخ</th><th>الوقت</th><th>عدد العربيات</th><th>الحالة</th><th>إجراء</th></tr></thead>
+        <thead><tr><th>رقم الحجز</th><th>رقم الدور</th><th>التاريخ</th><th>الوقت</th><th>عدد العربيات</th><th>الحالة</th><th>إجراء</th></tr></thead>
         <tbody id="myBookingsTbody"></tbody>
       </table>
     </div>
@@ -530,7 +530,7 @@ function closeSignupModal(){
     <input type="date" class="date-input" id="filterDate">
     <input type="text" class="date-input" id="filterSearch" placeholder="بحث..." style="flex:1">
   </div>
-  <div class="table-wrap"><table id="bookingsTable"><thead><tr><th>رقم الحجز</th><th>المخزن</th><th>المورد</th><th>رقم الأوردر</th><th>التاريخ</th><th>الوقت</th><th>نوع البضاعة</th><th>العربية</th><th>عدد العربيات</th><th>الكراتين</th><th>بالتات</th><th>السيارة/السائق</th><th>وقت الدخول</th><th>وقت الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="bookingsTbody"></tbody></table></div>
+  <div class="table-wrap"><table id="bookingsTable"><thead><tr><th>رقم الحجز</th><th>رقم الدور</th><th>المخزن</th><th>المورد</th><th>رقم الأوردر</th><th>التاريخ</th><th>الوقت</th><th>نوع البضاعة</th><th>العربية</th><th>عدد العربيات</th><th>الكراتين</th><th>السيارة/السائق</th><th>وقت الدخول</th><th>وقت الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="bookingsTbody"></tbody></table></div>
 </div>
 
 <!-- REPORTS PAGE -->
@@ -692,9 +692,19 @@ const SLOTS_PER_DAY = [
 ];
 
 // Slot capacity: default 6, but 11:00 and 12:00 are 7
-function slotCapacity(time) {
+// Admin can override capacity per (warehouse,date,time)
+function baseSlotCapacity(time) {
   if (time === '11:00' || time === '12:00') return 7;
   return 6;
+}
+
+function slotCapacity(whId, date, time) {
+  const ds = warehouseData?.[whId];
+  const key = getSlotKey(date, time);
+  const ov = ds?.slotCapacityOverrides?.[key];
+  const n = (ov === '' || ov === null || ov === undefined) ? null : Number(ov);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return baseSlotCapacity(time);
 }
 
 function fmtCap(n) {
@@ -829,7 +839,8 @@ function initWarehouseData() {
     if (!warehouseData[whId]) {
       warehouseData[whId] = {
         bookings: JSON.parse(localStorage.getItem(`whBookings_${whId}`) || '[]'),
-        blockedSlots: JSON.parse(localStorage.getItem(`whBlocked_${whId}`) || '[]')
+        blockedSlots: JSON.parse(localStorage.getItem(`whBlocked_${whId}`) || '[]'),
+        slotCapacityOverrides: JSON.parse(localStorage.getItem(`whSlotCaps_${whId}`) || '{}')
       };
     }
   }
@@ -901,6 +912,7 @@ async function loadWarehouseDataFromApi() {
       warehouseData[whId].bookings.push({
         id: b.id,
         groupId: b.groupId || b.groupid || '',
+        queueNo: b.queueNo || b.queueno || b.queue_no || '',
         warehouse: whId,
         supplier: b.supplier || '',
         orderNum: b.orderNum || '',
@@ -988,6 +1000,7 @@ function stopAutoSync() {
 function saveWarehouseData(whId) {
   localStorage.setItem(`whBookings_${whId}`, JSON.stringify(warehouseData[whId].bookings));
   localStorage.setItem(`whBlocked_${whId}`, JSON.stringify(warehouseData[whId].blockedSlots));
+  localStorage.setItem(`whSlotCaps_${whId}`, JSON.stringify(warehouseData[whId].slotCapacityOverrides || {}));
 }
 
 async function upsertBookingToApi(whId, booking) {
@@ -1000,6 +1013,7 @@ async function upsertBookingToApi(whId, booking) {
     await apiPost('upsertBooking', {
       id: booking.id,
       groupId: booking.groupId || '',
+      queueNo: booking.queueNo ?? '',
       warehouseId: whId,
       supplier: booking.supplier || '',
       orderNum: booking.orderNum || '',
@@ -1187,6 +1201,8 @@ function isNoActivityDay(whId, dateStr) {
   if (!whId || !dateStr) return false;
   const ds = warehouseData[whId];
   if (!ds) return false;
+  // Only auto-close days in the past. Today and future remain open (except Friday).
+  if (dateStr >= today()) return false;
   const hasBooking = (ds.bookings || []).some(b => b.date === dateStr);
   const hasManualBlock = (ds.blockedSlots || []).some(k => k.startsWith(dateStr + '|'));
   return !hasBooking && !hasManualBlock;
@@ -1222,7 +1238,7 @@ function getSlotBookedCount(whId, date, time) {
 }
 
 function getSlotAvailableCapacity(whId, date, time) {
-  return slotCapacity(time) - getSlotBookedCount(whId, date, time);
+  return slotCapacity(whId, date, time) - getSlotBookedCount(whId, date, time);
 }
 
 // Close slots that have already passed in real time (based on user's local time)
@@ -1316,7 +1332,7 @@ function renderWarehouse() {
   let whData = warehouseData[whId];
   let dayBookings = whData.bookings.filter(b => b.date === date && b.status !== 'rejected');
   
-  let totalCapacity = SLOTS_PER_DAY.reduce((sum, t) => sum + slotCapacity(t), 0);
+  let totalCapacity = SLOTS_PER_DAY.reduce((sum, t) => sum + slotCapacity(whId, date, t), 0);
   // Show booked as actual trucks (can be fractional)
   let bookedTrucks = dayBookings.reduce((sum, b) => sum + (parseFloat(b.truckCount) || 0), 0);
   let blocked = whData.blockedSlots.filter(k => k.startsWith(date+'|')).length;
@@ -1324,7 +1340,7 @@ function renderWarehouse() {
   let blockedCapacity = whData.blockedSlots.filter(k => k.startsWith(date+'|')).reduce((s,k)=>{
     let parts = k.split('|');
     let time = parts[1] || '';
-    return s + slotCapacity(time);
+    return s + slotCapacity(whId, date, time);
   },0);
   // Available capacity is still computed in capacity-units
   let bookedUnits = dayBookings.reduce((sum, b) => sum + (getSlotBookedCount(whId, b.date, b.time) ? 0 : 0), 0);
@@ -1339,7 +1355,7 @@ function renderWarehouse() {
   SLOTS_PER_DAY.forEach(time => {
     if (isBlocked(whId, date, time) || isPastSlot(date, time)) return;
     let used = getSlotBookedCount(whId, date, time);
-    let cap = slotCapacity(time);
+    let cap = slotCapacity(whId, date, time);
     if (used >= cap && cap > 0) completedSlots += 1;
     else remainingSlots += 1;
   });
@@ -1357,12 +1373,13 @@ function renderWarehouse() {
   grid.innerHTML = SLOTS_PER_DAY.map(time => {
     let st = slotStatus(whId, date, time);
     let bookedCount = getSlotBookedCount(whId, date, time);
-    let available = slotCapacity(time) - bookedCount;
+    let cap = slotCapacity(whId, date, time);
+    let available = cap - bookedCount;
     let bookingsInSlot = whData.bookings.filter(b => b.date === date && b.time === time && b.status !== 'rejected');
     
     let info = '';
     if (bookingsInSlot.length > 0) {
-      info = `<div class="slot-info"><strong>${bookingsInSlot.length} حجز</strong><br>${fmtCap(bookedCount)}/${slotCapacity(time)} عربية<br>`;
+      info = `<div class="slot-info"><strong>${bookingsInSlot.length} حجز</strong><br>${fmtCap(bookedCount)}/${cap} عربية<br>`;
       bookingsInSlot.slice(0, 2).forEach(b => {
         let t = parseFloat(b.truckCount) || 0;
         info += `${b.supplier.substring(0, 12)} (${fmtCap(t)} عربية)<br>`;
@@ -1375,12 +1392,15 @@ function renderWarehouse() {
     let capacityClass = available > 0 ? (available <= 1 ? 'capacity-warning' : '') : 'capacity-full';
     let capacityText = available > 0 ? (available <= 1 ? `⚠️ متبقي: ${fmtCap(available)} عربية فقط` : `متاح: ${fmtCap(available)} عربية`) : 'مكتمل';
     let clickFn = (st === 'available' || st === 'warning') ? `onclick="toggleBlock('${date}','${time}')"` : '';
-    
-    return `<div class="slot-card ${st === 'warning' ? 'available' : st}" ${clickFn}>
+    let adminEditBtn = (currentWarehouseAccess === 'all') ? `<button class="btn-sm btn-details" type="button" onclick="editSlotCapacity('${date}','${time}')">تعديل السعة</button>` : '';
+    let adminBlockBtn = (currentWarehouseAccess === 'all') ? `<button class="btn-sm btn-details" type="button" onclick="toggleBlock('${date}','${time}')">${st === 'blocked' ? 'فتح' : 'قفل'}</button>` : '';
+
+    return `<div class="slot-card ${st === 'warning' ? 'available' : st}" ${currentWarehouseAccess === 'all' ? '' : ''}>
       <div class="slot-time">${time}</div>
       <div class="slot-status">${label}</div>
       <div class="slot-capacity ${capacityClass}">🚛 ${capacityText}</div>
       ${info}
+      ${currentWarehouseAccess === 'all' ? `<div class="action-btns" style="justify-content:center;margin-top:10px">${adminBlockBtn}${adminEditBtn}</div>` : ''}
     </div>`;
   }).join('');
   
@@ -1416,6 +1436,35 @@ function toggleBlock(date, time) {
   saveWarehouseData(whId);
   // Sync to Sheets
   upsertBlockedSlotToApi(whId, date, time, isBlockedNow);
+  renderWarehouse();
+}
+
+function editSlotCapacity(date, time) {
+  let whId = currentWarehouse;
+  if (currentWarehouseAccess !== 'all') {
+    alert('غير مسموح: هذا الإجراء للادمن فقط');
+    return;
+  }
+  const key = getSlotKey(date, time);
+  warehouseData[whId].slotCapacityOverrides = warehouseData[whId].slotCapacityOverrides || {};
+  const current = warehouseData[whId].slotCapacityOverrides[key];
+  const base = baseSlotCapacity(time);
+  let v = prompt(`تعديل سعة Slot (${time})\nالقيمة الافتراضية: ${base}\nاتركه فارغ لإزالة التعديل`, (current === undefined ? '' : String(current)));
+  if (v === null) return;
+  v = String(v).trim();
+  if (!v) {
+    delete warehouseData[whId].slotCapacityOverrides[key];
+    saveWarehouseData(whId);
+    renderWarehouse();
+    return;
+  }
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) {
+    alert('⚠️ أدخل رقم صحيح (0 أو أكثر)');
+    return;
+  }
+  warehouseData[whId].slotCapacityOverrides[key] = n;
+  saveWarehouseData(whId);
   renderWarehouse();
 }
 
@@ -1517,13 +1566,14 @@ function renderMyBookings() {
   all.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
   if (!all.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="color:#999">لا توجد حجوزات خاصة بك بعد</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="color:#999">لا توجد حجوزات خاصة بك بعد</td></tr>`;
     return;
   }
 
   tbody.innerHTML = all.slice(0, 50).map(b => {
     return `<tr>
       <td><strong>${b.id}</strong></td>
+      <td>${b.queueNo || '-'}</td>
       <td>${formatDate(b.date)}</td>
       <td>${b.time || '-'}</td>
       <td>${fmtCap(parseFloat(b.truckCount) || 0)}</td>
@@ -1608,6 +1658,17 @@ function submitBooking() {
   let groupId = genBookingId(whId);
   let createdIds = [];
 
+  // Compute next queue number for (warehouse,date)
+  function nextQueueNo() {
+    let list = (warehouseData[whId]?.bookings || []).filter(b => b.date === date);
+    let maxQ = 0;
+    list.forEach(b => {
+      let q = parseInt(b.queueNo);
+      if (Number.isFinite(q) && q > maxQ) maxQ = q;
+    });
+    return maxQ + 1;
+  }
+
   for (let i = startIdx; i < SLOTS_PER_DAY.length && remainingUnits > 0; i++) {
     const slotTime = SLOTS_PER_DAY[i];
     // Skip blocked/past
@@ -1645,6 +1706,7 @@ function submitBooking() {
     let booking = {
       id: bookingId,
       groupId,
+      queueNo: nextQueueNo(),
       warehouse: whId,
       supplier,
       orderNum: orderNum || '',
@@ -1770,6 +1832,7 @@ function renderBookingsTable() {
   };
   tbody.innerHTML = list.map(b => `<tr>
     <td><strong>${b.id}</strong></td>
+    <td>${b.queueNo || '-'}</td>
     <td>${b.warehouseName}</td>
     <td>${b.supplier}</td>
     <td>${b.orderNum}</td>
