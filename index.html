@@ -986,33 +986,8 @@ function ensureDataLoaded() {
 // Auto-sync (poll) every 10 seconds when logged in
 let autoSyncTimer = null;
 function startAutoSync() {
+  // Auto-sync disabled: refresh data only when changing date or manual refresh.
   stopAutoSync();
-  autoSyncTimer = setInterval(async () => {
-    if (!currentRole) return;
-    // force reload (show loader while waiting)
-    try {
-      await refreshDataWithLoader();
-    } catch(e) {
-      console.error(e);
-    }
-    // refresh current visible page
-    try {
-      if (currentRole === 'warehouse') {
-        // update active pages if visible
-        if (document.getElementById('page-warehouse')?.classList.contains('active')) renderWarehouse();
-        if (document.getElementById('page-bookings')?.classList.contains('active')) renderBookingsTable();
-        if (document.getElementById('page-reports')?.classList.contains('active')) { initReportsDefaults(); refreshReportsDashboard(); }
-      }
-      if (currentRole === 'supplier') {
-        if (document.getElementById('page-supplier')?.classList.contains('active')) {
-          renderSupplierSlots();
-          renderMyBookings();
-        }
-      }
-    } catch(e) {
-      console.error(e);
-    }
-  }, 10000);
 }
 
 function stopAutoSync() {
@@ -1042,7 +1017,7 @@ function hideLoader() {
 
 async function refreshDataWithLoader() {
   try {
-    showLoader('جاري تحديث البيانات...');
+    showLoader('جاري التحميل...');
     dataLoadPromise = null;
     await ensureDataLoaded();
   } finally {
@@ -1503,12 +1478,17 @@ function renderWarehouse() {
   badge.textContent = date === today() ? '● اليوم' : '';
 }
 
+// Load latest data when changing warehouse date
+document.getElementById('whDate')?.addEventListener('change', () => {
+  refreshDataWithLoader().then(() => renderWarehouse());
+});
+
 function changeDay(n) {
   let el = document.getElementById('whDate');
   let d = new Date(el.value || today());
   d.setDate(d.getDate() + n);
   el.value = d.toISOString().split('T')[0];
-  renderWarehouse();
+  refreshDataWithLoader().then(() => renderWarehouse());
 }
 
 function toggleBlock(date, time) {
@@ -2708,7 +2688,7 @@ document.getElementById('modalOverlay').onclick = closeModal;
 document.getElementById('filterStatus').onchange = renderBookingsTable;
 document.getElementById('filterDate').onchange = renderBookingsTable;
 document.getElementById('filterSearch').oninput = renderBookingsTable;
-document.getElementById('supDate').onchange = () => { renderSupplierSlots(); checkCapacity(); };
+document.getElementById('supDate').onchange = () => { refreshDataWithLoader().then(() => { renderSupplierSlots(); checkCapacity(); }); };
 document.getElementById('supTruckCount').oninput = checkCapacity;
 document.getElementById('bookingWarehouseSelect').onchange = () => { renderSupplierSlots(); checkCapacity(); };
 document.getElementById('exportAllBtn').onclick = exportAllSheets;
@@ -2723,8 +2703,8 @@ document.getElementById('reportsWarehouseFilter').onchange = () => { refreshRepo
 // Reports dashboard listeners
 document.getElementById('rDailyDate').onchange = refreshReportsDashboard;
 document.getElementById('rBookingsStatus').onchange = refreshReportsDashboard;
-document.getElementById('rFrom').onchange = refreshReportsDashboard;
-document.getElementById('rTo').onchange = refreshReportsDashboard;
+document.getElementById('rFrom').onchange = () => { refreshDataWithLoader().then(() => refreshReportsDashboard()); };
+document.getElementById('rTo').onchange = () => { refreshDataWithLoader().then(() => refreshReportsDashboard()); };
 
 document.getElementById('exportDailyBtn').onclick = exportDailySchedule;
 document.getElementById('exportBookingsBtn').onclick = exportBookingsReport;
