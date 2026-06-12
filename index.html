@@ -2451,8 +2451,8 @@ function applyWarehouseLogin(match) {
   if (currentWarehouseAccess === 'single' && match.warehouseId && WAREHOUSES[match.warehouseId]) {
     whNameForPill = WAREHOUSES[match.warehouseId].name;
   }
-  // Format: "مسؤول - Talabeya-NSR" (no "المخزن الأول")
-  const roleLabel = 'مسؤول';
+  // Format: "الادمن - Talabeya-NSR" for admin, otherwise "مسؤول - Talabeya-NSR"
+  const roleLabel = (currentWarehouseAccess === 'all') ? 'الادمن' : 'مسؤول';
   document.getElementById('userPillLabel').textContent = roleLabel + (whNameForPill ? ` - ${whNameForPill}` : '');
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('topbar').style.display = 'flex';
