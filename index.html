@@ -1587,19 +1587,39 @@ function renderMyBookings() {
     return;
   }
 
-  tbody.innerHTML = all.slice(0, 50).map(b => {
-    let canCancel = (b.status === 'approved' || b.status === 'pending');
+  // Group split bookings by groupId so supplier sees one master booking number
+  let byGroup = {};
+  all.forEach(b => {
+    let gid = (b.groupId || b.id || '').trim();
+    if (!byGroup[gid]) byGroup[gid] = { groupId: gid, parts: [], createdAt: b.createdAt || '' };
+    byGroup[gid].parts.push(b);
+    if ((b.createdAt||'') > (byGroup[gid].createdAt||'')) byGroup[gid].createdAt = b.createdAt || '';
+  });
+  let groups = Object.values(byGroup).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+
+  tbody.innerHTML = groups.slice(0, 50).map(g => {
+    let parts = g.parts.slice().sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    let whName = WAREHOUSES[parts[0].warehouseId]?.name || '';
+    let date = parts[0].date;
+    let timeRange = parts.map(p=>p.time).filter(Boolean);
+    let timeLabel = timeRange.length ? (timeRange[0] + (timeRange.length>1 ? ' +'+(timeRange.length-1) : '')) : '-';
+    let trucks = parts.reduce((s,p)=>s + (parseFloat(p.truckCount)||0), 0);
+    let cartons = parts.reduce((s,p)=>s + (parseInt(p.cartons)||0), 0);
+    let status = parts.some(p=>p.status==='cancelled') ? 'cancelled' : (parts.some(p=>p.status==='not_delivered') ? 'not_delivered' : (parts.some(p=>p.status==='completed') ? 'completed' : (parts.some(p=>p.status==='approved') ? 'approved' : (parts[0].status||''))));
+    let canCancel = parts.every(p => (p.status === 'approved' || p.status === 'pending'));
+    // Show queue number for the first slot (or '-')
+    let q = parts[0].queueNo || '-';
     return `<tr>
-      <td><strong>${b.id}</strong></td>
-      <td>${b.queueNo || '-'}</td>
-      <td>${formatDate(b.date)}</td>
-      <td>${b.time || '-'}</td>
-      <td>${fmtCap(parseFloat(b.truckCount) || 0)}</td>
-      <td>${statusLabel(b.status)}</td>
+      <td><strong>${g.groupId}</strong></td>
+      <td>${q}</td>
+      <td>${formatDate(date)}</td>
+      <td>${timeLabel}</td>
+      <td>${fmtCap(trucks)}</td>
+      <td>${statusLabel(status)}</td>
       <td>
         <div class="action-btns">
-          <button class="btn-sm btn-details" type="button" onclick="trackMyBooking('${b.id}')">تتبع</button>
-          ${canCancel ? `<button class=\"btn-sm btn-cancel\" type=\"button\" onclick=\"cancelMyBooking('${b.warehouseId}','${b.id}')\">إلغاء</button>` : ''}
+          <button class="btn-sm btn-details" type="button" onclick="trackMyBooking('${g.groupId}')">تتبع</button>
+          ${canCancel ? `<button class=\"btn-sm btn-cancel\" type=\"button\" onclick=\"cancelMyGroup('${g.groupId}')\">إلغاء الكل</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -1628,6 +1648,30 @@ function cancelMyBooking(whId, id) {
   renderMyBookings();
   renderSupplierSlots();
   alert('✅ تم إلغاء الحجز');
+}
+
+function cancelMyGroup(groupId) {
+  if (!currentSupplierData) return;
+  let supplierName = (currentSupplierData.company || '').trim();
+  if (!confirm('هل تريد إلغاء هذا الحجز بالكامل؟')) return;
+  let any = false;
+  for (let whId in warehouseData) {
+    (warehouseData[whId]?.bookings || []).forEach(b => {
+      if ((b.groupId||b.id||'').trim() === String(groupId).trim() && (b.supplier||'').trim() === supplierName) {
+        if (b.status === 'approved' || b.status === 'pending') {
+          b.status = 'cancelled';
+          b.cancelledAt = new Date().toISOString();
+          upsertBookingToApi(whId, b);
+          any = true;
+        }
+      }
+    });
+    saveWarehouseData(whId);
+  }
+  renderMyBookings();
+  renderSupplierSlots();
+  if (any) alert('✅ تم إلغاء الحجز بالكامل');
+  else alert('لا يوجد أجزاء يمكن إلغاؤها');
 }
 
 function trackMyBooking(id) {
@@ -2467,13 +2511,21 @@ async function doLogin() {
 
 function switchPage(pageId) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  if (event && event.currentTarget) event.currentTarget.classList.add('active');
+  // event may be undefined when switching programmatically (e.g. restoreSession)
+  if (typeof event !== 'undefined' && event && event.currentTarget) event.currentTarget.classList.add('active');
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + pageId).classList.add('active');
   if (pageId === 'warehouse') renderWarehouse();
   if (pageId === 'bookings') renderBookingsTable();
   if (pageId === 'reports') { initReportsDefaults(); refreshReportsDashboard(); }
   if (pageId === 'supplier') renderSupplierSlots();
+
+  // Persist last opened page
+  try {
+    const st = loadSessionState() || {};
+    st.pageId = pageId;
+    saveSessionState(st);
+  } catch(e) {}
 }
 
 function doLogout() {
@@ -2529,12 +2581,12 @@ document.getElementById('rDailyDate').onchange = refreshReportsDashboard;
 document.getElementById('rBookingsFrom').onchange = refreshReportsDashboard;
 document.getElementById('rBookingsTo').onchange = refreshReportsDashboard;
 document.getElementById('rBookingsStatus').onchange = refreshReportsDashboard;
-document.getElementById('rUtilFrom').onchange = refreshReportsDashboard;
-document.getElementById('rUtilTo').onchange = refreshReportsDashboard;
+document.getElementById('rGoodsFrom').onchange = refreshReportsDashboard;
+document.getElementById('rGoodsTo').onchange = refreshReportsDashboard;
 document.getElementById('rSupFrom').onchange = refreshReportsDashboard;
 document.getElementById('rSupTo').onchange = refreshReportsDashboard;
-document.getElementById('rBlockedFrom').onchange = refreshReportsDashboard;
-document.getElementById('rBlockedTo').onchange = refreshReportsDashboard;
+document.getElementById('rTruckFrom').onchange = refreshReportsDashboard;
+document.getElementById('rTruckTo').onchange = refreshReportsDashboard;
 
 document.getElementById('exportDailyBtn').onclick = exportDailySchedule;
 document.getElementById('exportBookingsBtn').onclick = exportBookingsReport;
@@ -2559,12 +2611,12 @@ function initReportsDefaults() {
   if (!document.getElementById('rDailyDate').value) document.getElementById('rDailyDate').value = today();
   if (!document.getElementById('rBookingsFrom').value) document.getElementById('rBookingsFrom').value = today();
   if (!document.getElementById('rBookingsTo').value) document.getElementById('rBookingsTo').value = today();
-  if (!document.getElementById('rUtilFrom').value) document.getElementById('rUtilFrom').value = today();
-  if (!document.getElementById('rUtilTo').value) document.getElementById('rUtilTo').value = today();
+  if (!document.getElementById('rGoodsFrom').value) document.getElementById('rGoodsFrom').value = today();
+  if (!document.getElementById('rGoodsTo').value) document.getElementById('rGoodsTo').value = today();
   if (!document.getElementById('rSupFrom').value) document.getElementById('rSupFrom').value = today();
   if (!document.getElementById('rSupTo').value) document.getElementById('rSupTo').value = today();
-  if (!document.getElementById('rBlockedFrom').value) document.getElementById('rBlockedFrom').value = today();
-  if (!document.getElementById('rBlockedTo').value) document.getElementById('rBlockedTo').value = today();
+  if (!document.getElementById('rTruckFrom').value) document.getElementById('rTruckFrom').value = today();
+  if (!document.getElementById('rTruckTo').value) document.getElementById('rTruckTo').value = today();
 }
 
 function refreshReportsDashboard() {
@@ -2575,9 +2627,9 @@ function refreshReportsDashboard() {
     }
     renderDailyScheduleCard();
     renderBookingsCard();
-    renderUtilizationCard();
     renderSupplierSummaryCard();
-    renderBlockedSlotsCard();
+    renderGoodsTypeCard();
+    renderTruckTypeCard();
   } catch (e) {
     console.error(e);
     alert('حدث خطأ أثناء تحميل التقارير. افتح Console لمعرفة التفاصيل.');
@@ -3004,12 +3056,16 @@ document.getElementById('whDate').value = today();
     const u = loadWarehouseUsers().find(x => x.username === st.username);
     if (u) {
       applyWarehouseLogin(u);
+      // restore last page
+      if (st.pageId) switchPage(st.pageId);
     }
   }
   if (st.role === 'supplier') {
     const u = suppliers.find(x => x.username === st.username);
     if (u) {
       applySupplierLogin(u);
+      // restore last page
+      if (st.pageId) switchPage(st.pageId);
     }
   }
 })();
