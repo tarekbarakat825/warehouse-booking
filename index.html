@@ -1424,9 +1424,9 @@ function renderWarehouse() {
         let t = parseFloat(b.truckCount) || 0;
         let q = (b.queueNo !== undefined && b.queueNo !== null && b.queueNo !== '') ? b.queueNo : '-';
         let supplierShort = (b.supplier || '').substring(0, 12);
-        let truckShort = (b.truckType || '').substring(0, 10);
+        let truckFull = (b.truckType || '');
         let goodsShort = (b.goodsType || '').substring(0, 12);
-        info += `#${q} · ${supplierShort} — ${truckShort} — ${goodsShort} (${fmtCap(t)} عربية)<br>`;
+        info += `#${q} · ${supplierShort} — ${truckFull} — ${goodsShort} (${fmtCap(t)} عربية)<br>`;
       });
       if (bookingsInSlot.length > 2) info += `+${bookingsInSlot.length-2} آخرين`;
       info += `</div>`;
