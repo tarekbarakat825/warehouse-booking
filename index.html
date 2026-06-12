@@ -101,6 +101,10 @@ body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:
 .loader-spinner{width:18px;height:18px;border-radius:999px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loader-text{font-size:13px;font-weight:700}
+body.boot-loading #loginScreen{display:none !important}
+body.boot-loading .page{display:none !important}
+body.boot-loading #topbar{display:none !important}
+body.boot-loading #loaderOverlay{display:flex !important}
 .topbar-brand{font-size:15px;font-weight:700;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
 .topbar-brand .dot{width:8px;height:8px;background:var(--accent);border-radius:50%;display:inline-block}
 .topbar-nav{display:flex;gap:4px}
@@ -262,7 +266,17 @@ tbody tr:hover td{background:#fafaf8}
 .preview-table tbody td{padding:7px 8px 7px 0}
 </style>
 </head>
-<body>
+<body class="boot-loading">
+
+<script>
+  // Prevent flashing the login/main screens on refresh
+  try {
+    document.addEventListener('DOMContentLoaded', () => {
+      const ov = document.getElementById('loaderOverlay');
+      if (ov) ov.style.display = 'flex';
+    });
+  } catch(e) {}
+</script>
 
 <!-- LOGIN SCREEN -->
 <div id="loginScreen" style="display:none">
@@ -455,6 +469,9 @@ function closeSignupModal(){
         <div class="report-card-title">📌 حجوزاتي</div>
         <div class="report-card-sub"></div>
       </div>
+    </div>
+    <div class="report-filters" style="margin-top:0">
+      <input type="date" class="date-input" id="myBookingsDate">
     </div>
     <div style="overflow-x:auto;max-height:220px">
       <table class="preview-table" style="margin-top:0">
@@ -1637,13 +1654,16 @@ function renderMyBookings() {
   if (!currentSupplierData) return;
   let tbody = document.getElementById('myBookingsTbody');
   if (!tbody) return;
+  let dateFilter = (document.getElementById('myBookingsDate')?.value || '').trim();
   // Supplier name used in bookings is the company name
   let supplierName = (currentSupplierData.company || document.getElementById('supName')?.value || '').trim();
   let all = [];
   for (let whId in warehouseData) {
     (warehouseData[whId]?.bookings || []).forEach(b => {
       if ((b.supplier || '').trim() === supplierName) {
-        all.push({ ...b, warehouseId: whId });
+        if (!dateFilter || b.date === dateFilter) {
+          all.push({ ...b, warehouseId: whId });
+        }
       }
     });
   }
@@ -2576,6 +2596,9 @@ function applySupplierLogin(match) {
     document.getElementById('bookingWarehouseSelect').value = match.defaultWarehouse;
   }
   document.getElementById('supDate').value = today();
+  // default filter for "حجوزاتي"
+  let myDf = document.getElementById('myBookingsDate');
+  if (myDf && !myDf.value) myDf.value = today();
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('topbar').style.display = 'flex';
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -2689,6 +2712,7 @@ document.getElementById('filterStatus').onchange = renderBookingsTable;
 document.getElementById('filterDate').onchange = renderBookingsTable;
 document.getElementById('filterSearch').oninput = renderBookingsTable;
 document.getElementById('supDate').onchange = () => { refreshDataWithLoader().then(() => { renderSupplierSlots(); checkCapacity(); }); };
+document.getElementById('myBookingsDate').onchange = renderMyBookings;
 document.getElementById('supTruckCount').oninput = checkCapacity;
 document.getElementById('bookingWarehouseSelect').onchange = () => { renderSupplierSlots(); checkCapacity(); };
 document.getElementById('exportAllBtn').onclick = exportAllSheets;
@@ -3172,16 +3196,16 @@ document.getElementById('whDate').value = today();
 // Restore session after refresh
 // Restore session after refresh (ensure latest users are loaded from Sheets first)
 (async function restoreSession() {
+  // Keep loader visible during refresh to avoid flashing the login/main screens
   const st = loadSessionState();
-  // Keep the UI in loading state during refresh instead of flashing login screen
-  try {
-    showLoader('جاري التحميل...');
-  } catch(e) {}
+  try { showLoader('جاري التحميل...'); } catch(e) {}
   if (!st || !st.role || !st.username) {
-    hideLoader();
-    document.getElementById('loginScreen').style.display = 'block';
+    try { hideLoader(); } catch(e) {}
+    try { document.body.classList.remove('boot-loading'); } catch(e) {}
+    try { document.getElementById('loginScreen').style.display = 'block'; } catch(e) {}
     return;
   }
+
   try { await loadUsersFromApi(); } catch(e) {}
 
   if (st.role === 'warehouse') {
@@ -3189,7 +3213,8 @@ document.getElementById('whDate').value = today();
     if (u) {
       applyWarehouseLogin(u);
       if (st.pageId) switchPage(st.pageId);
-      hideLoader();
+      try { hideLoader(); } catch(e) {}
+      try { document.body.classList.remove('boot-loading'); } catch(e) {}
       return;
     }
   }
@@ -3198,14 +3223,16 @@ document.getElementById('whDate').value = today();
     if (u) {
       applySupplierLogin(u);
       if (st.pageId) switchPage(st.pageId);
-      hideLoader();
+      try { hideLoader(); } catch(e) {}
+      try { document.body.classList.remove('boot-loading'); } catch(e) {}
       return;
     }
   }
 
   // If we couldn't restore, fall back to login screen
-  hideLoader();
-  document.getElementById('loginScreen').style.display = 'block';
+  try { hideLoader(); } catch(e) {}
+  try { document.body.classList.remove('boot-loading'); } catch(e) {}
+  try { document.getElementById('loginScreen').style.display = 'block'; } catch(e) {}
 })();
 
 // suppliers are reset to supplier_admin on load (see USERS section above)
